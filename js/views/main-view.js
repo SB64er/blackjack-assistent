@@ -57,6 +57,7 @@ export class MainView extends View {
         </div>
         <div class="mini-cam" data-slot="mini" aria-label="Live-Kamerabild"></div>
         <nav class="topbar-actions">
+          <span data-slot="fs"></span>
           <button type="button" class="icon-btn" data-nav="kamera" aria-label="Kamera und Kalibrierung">${ICONS.camera}</button>
           <button type="button" class="icon-btn" data-nav="einstellungen" aria-label="Einstellungen">${ICONS.gear}</button>
         </nav>
@@ -71,6 +72,8 @@ export class MainView extends View {
     this.listen(settings, 'change', r);
     this.listen(camera, 'state', r);
     this.listen(camera, 'dimensions', r);
+    this.listen(camera, 'playback', r);
+    this.listen(this.ctx.display, 'change', r);
     this.listen(calibration, 'change', r);
     this.listen(templates, 'change', r);
     this.listen(recognition, 'update', r);
@@ -232,19 +235,29 @@ export class MainView extends View {
 
     // Hinweise
     let notice = '';
-    if (this._event && EVENT_TEXT[this._event.type] && !demo) {
+    if (camera.playBlocked) {
+      notice = `<button type="button" class="warn-strip" data-camera="play">${ICONS.warning}<span>Kamerabild angehalten – hier tippen, um es anzuzeigen</span></button>`;
+    } else if (this._event && EVENT_TEXT[this._event.type] && !demo) {
       notice = `<div class="toast" role="status">${ICONS.check}<span>${esc(EVENT_TEXT[this._event.type])}</span></div>`;
     } else if (compat || cam.tone === 'warn') {
       notice = `<button type="button" class="warn-strip" data-nav="kamera">${ICONS.warning}<span>${esc(compat ? compat.title : cam.label)} – Details</span></button>`;
     } else if (!demo && m.missing && m.missing.length && m.missing.length < 13 && !m.blocker) {
       notice = `<button type="button" class="warn-strip" data-nav="anlernen">${ICONS.warning}<span>Noch nicht angelernt: ${esc(m.missing.join(', '))}</span></button>`;
     }
+    // Vollbild-Knopf (nur im Browser-Tab, wo die Fullscreen-API verfügbar ist)
+    const { display } = this.ctx;
+    const fs = display.fullscreenSupported
+      ? `<button type="button" class="icon-btn" data-app="fullscreen" aria-label="${display.fullscreen ? 'Vollbild beenden' : 'Vollbild'}">${display.fullscreen ? ICONS.shrink : ICONS.expand}</button>`
+      : '';
+    const fsEl = this.el.querySelector('[data-slot="fs"]');
+    if (fsEl.innerHTML !== fs) fsEl.innerHTML = fs;
+
     const noticeEl = this.el.querySelector('[data-slot="notice"]');
     if (noticeEl.innerHTML !== notice) noticeEl.innerHTML = notice;
 
     // Spielbereich nur neu zeichnen, wenn sich etwas geändert hat
     // (verhindert verlorene Tipps bei 4 Auswertungen pro Sekunde).
-    const key = JSON.stringify([m, demoIndex, manual, settings.get('speech'), camera.state, camera.canResume]);
+    const key = JSON.stringify([m, demoIndex, manual, settings.get('speech'), camera.state, camera.canResume, camera.startingSlow]);
     if (!force && key === this._lastKey) return;
     this._lastKey = key;
 

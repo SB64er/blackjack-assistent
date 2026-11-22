@@ -33,6 +33,8 @@ export class SettingsView extends View {
     this.listen(calibration, 'change', () => this.render());
     this.listen(this.ctx.templates, 'change', () => this.render());
     this.listen(this.ctx.recognition, 'status', () => this.render());
+    this.listen(this.ctx.updates, 'change', () => this.render());
+    this.listen(this.ctx.display, 'change', () => this.render());
     this.render();
   }
 
@@ -80,6 +82,46 @@ export class SettingsView extends View {
     }
   }
 
+  _appHtml() {
+    const { display, updates } = this.ctx;
+    let offline;
+    if (!updates.supported) offline = 'Nicht verfügbar (nur über HTTPS)';
+    else if (updates.offlineVersion) offline = `Bereit · ${updates.offlineVersion.replace('bj-assistent-', '')}`;
+    else offline = 'Wird vorbereitet …';
+    let updateRow = '';
+    if (updates.supported) {
+      updateRow = updates.available
+        ? `<button type="button" class="row row--btn" data-app="update-apply">
+             <span class="row-stack"><span class="text-ok">Neue Version installieren</span><small>Lädt die App neu · alle Daten bleiben erhalten</small></span>
+             <span class="row-value">${ICONS.chevron}</span>
+           </button>`
+        : `<button type="button" class="row row--btn" data-app="update-check" ${updates.checking ? 'disabled' : ''}>
+             <span class="row-stack"><span>Nach Updates suchen</span><small>${updates.checking ? 'Suche läuft …' : (updates.lastCheck ? `Zuletzt geprüft: ${esc(updates.lastCheck.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }))} – aktuell` : 'Geschieht auch automatisch beim Öffnen')}</small></span>
+             <span class="row-value">${ICONS.chevron}</span>
+           </button>`;
+    }
+    const fsRow = display.fullscreenSupported
+      ? `<div class="row">
+           <span class="row-stack"><span>Vollbild</span><small>Blendet die Safari-Leisten aus</small></span>
+           ${toggle('fullscreen', display.fullscreen, 'Vollbild').replace('data-action="fullscreen"', 'data-app="fullscreen"')}
+         </div>`
+      : '';
+    const install = display.ios && !display.standalone
+      ? `<p class="hint hint--box"><b>Als App auf dem Home-Bildschirm:</b> In Safari auf <b>Teilen</b> › <b>Zum Home-Bildschirm</b> tippen. Die App startet dann ohne Browserleisten im Vollbild. Achtung: Die Home-Bildschirm-App hat einen eigenen Speicher – Kalibrierung und angelernte Karten dort einmal neu einrichten.</p>`
+      : '';
+    return `
+        <section class="group">
+          <h2 class="group-title">APP</h2>
+          <div class="list">
+            <div class="row"><span>Startart</span><span class="row-value">${esc(display.modeLabel)}</span></div>
+            ${fsRow}
+            <div class="row"><span class="row-stack"><span>Offline nutzbar</span><small>App-Dateien auf dem Gerät gespeichert</small></span><span class="row-value">${esc(offline)}</span></div>
+            ${updateRow}
+          </div>
+          ${install}
+        </section>`;
+  }
+
   render() {
     const { settings } = this.ctx;
     const manual = settings.get('roundMode') === 'manuell';
@@ -102,7 +144,7 @@ export class SettingsView extends View {
           </div>
           <p class="group-help">${manual
             ? 'Tippe auf „Neue Hand“, sobald eine neue Runde beginnt.'
-            : 'Die App erkennt neue Runden selbst (ab einer späteren Phase).'}</p>
+            : 'Die App erkennt neue Runden selbst: Sobald der Tisch leer war und neue Karten erscheinen.'}</p>
         </section>
 
         <section class="group">
@@ -166,6 +208,8 @@ export class SettingsView extends View {
             <button type="button" class="row row--link" data-nav="test"><span>Testmodus Kamera &amp; Kalibrierung</span><span class="row-value">${ICONS.chevron}</span></button>
           </div>
         </section>
+
+        ${this._appHtml()}
 
         <p class="footnote">Version ${esc(APP_VERSION)} · Alle Daten bleiben auf diesem Gerät.</p>
       </div>`;

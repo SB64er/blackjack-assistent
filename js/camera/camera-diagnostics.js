@@ -23,7 +23,7 @@ async function videoInputCount() {
   }
 }
 
-export async function collectDiagnostics(camera) {
+export async function collectDiagnostics(camera, ctx = {}) {
   const info = camera.info();
   const v = camera.video;
   const age = camera.lastFrameAt ? Math.round(performance.now() - camera.lastFrameAt) : null;
@@ -42,6 +42,13 @@ export async function collectDiagnostics(camera) {
     ['Einstellungsstufe', camera.constraintLevel == null ? '–' : ['hoch (1920×1080)', 'nur Rückkamera', 'Standard'][camera.constraintLevel]],
     ['Bild', info ? `${info.width}×${info.height} · ${info.frameRate} fps · ${info.facingMode}` : '–'],
     ['Video readyState', String(v.readyState)],
+    ['Wiedergabe', !camera.stream ? '–' : (camera.playBlocked ? 'BLOCKIERT (Tipp nötig)' : (v.paused ? 'pausiert' : 'läuft'))],
+    ['Startdauer', camera.startDurationMs == null ? '–' : `${camera.startDurationMs} ms`],
+    ['Selbstreparaturen', String(camera.repairs || 0)],
+    ['Bildhelligkeit', camera.brightness == null ? '–' : `${camera.brightness} / 255`],
+    ['Anzeige', ctx.display ? ctx.display.modeLabel : '–'],
+    ['Bildschirm', `${window.innerWidth}×${window.innerHeight} · ${window.innerWidth >= window.innerHeight ? 'quer' : 'hoch'} · ${window.devicePixelRatio}x`],
+    ['Offline-Version', ctx.updates ? (ctx.updates.offlineVersion || 'keine') : '–'],
     ['Empfangene Frames', String(camera.frameCount)],
     ['Letzter Frame vor', age == null || !camera.stream ? '–' : `${age} ms`],
     ['Wake-Lock unterstützt', 'wakeLock' in navigator ? 'ja' : 'nein'],
