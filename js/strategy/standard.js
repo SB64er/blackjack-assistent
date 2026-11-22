@@ -5,7 +5,9 @@
 //   „Blackjack Basic Strategy Chart (4–8 Decks)“, Wizard of Odds,
 //   https://wizardofodds.com/games/blackjack/strategy/4-decks/
 // Die Tabelle wird hier aus diesen Regeln abgeleitet – abhängig von
-// Dealer bei Soft 17 (steht/zieht), Verdoppeln nach Split und Aufgeben.
+// Dealer bei Soft 17 (steht/zieht) und Verdoppeln nach Split.
+// Ab Version 0.6.0 gibt es KEIN Aufgeben (Surrender) mehr: Die Tabelle entspricht
+// der Quelle für „Surrender not allowed“.
 // Für 1–2 Decks gibt es kleine Abweichungen; dort gilt diese Tabelle als
 // bewährter Rückfall (siehe Analyse im Rechenmodell).
 
@@ -19,18 +21,23 @@ export const STANDARD_SOURCE = Object.freeze({
 // Codes (wie in üblichen Strategietabellen):
 //   H  ziehen · S stehen · D verdoppeln, sonst ziehen · Ds verdoppeln, sonst stehen
 //   P  splitten · Ph splitten nur mit Verdoppeln nach Split, sonst wie Gesamtwert
-//   Rh aufgeben, sonst ziehen · Rs aufgeben, sonst stehen · Rp aufgeben, sonst splitten
-export const CODES = ['H', 'S', 'D', 'Ds', 'P', 'Ph', 'Rh', 'Rs', 'Rp'];
+export const CODES = ['H', 'S', 'D', 'Ds', 'P', 'Ph'];
 export const CODE_LABEL = {
   H: 'Ziehen', S: 'Stehen', D: 'Verdoppeln, sonst ziehen', Ds: 'Verdoppeln, sonst stehen',
-  P: 'Splitten', Ph: 'Splitten mit Verdoppeln nach Split, sonst wie Gesamtwert',
-  Rh: 'Aufgeben, sonst ziehen', Rs: 'Aufgeben, sonst stehen', Rp: 'Aufgeben, sonst splitten'
+  P: 'Splitten', Ph: 'Splitten mit Verdoppeln nach Split, sonst wie Gesamtwert'
 };
 export const CODES_BY_KIND = {
-  hard: ['H', 'S', 'D', 'Ds', 'Rh', 'Rs'],
-  soft: ['H', 'S', 'D', 'Ds', 'Rh', 'Rs'],
-  pair: ['P', 'Ph', 'Rp', 'H', 'S', 'D', 'Ds', 'Rh', 'Rs']
+  hard: ['H', 'S', 'D', 'Ds'],
+  soft: ['H', 'S', 'D', 'Ds'],
+  pair: ['P', 'Ph', 'H', 'S', 'D', 'Ds']
 };
+
+// Codes aus Version 0.5.0 mit Aufgeben (Surrender). Sie werden beim Lesen alter
+// Daten in die gleichwertige Aktion OHNE Aufgeben übersetzt („Aufgeben, sonst …“).
+export const LEGACY_SURRENDER_CODES = Object.freeze({ Rh: 'H', Rs: 'S', Rp: 'P' });
+export function modernCode(code) {
+  return Object.prototype.hasOwnProperty.call(LEGACY_SURRENDER_CODES, code) ? LEGACY_SURRENDER_CODES[code] : code;
+}
 
 // Dealerkarten 2–10 und Ass (= 11).
 export const UPCARDS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -40,7 +47,7 @@ export const ROWS = {
   pair: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 };
 
-export const DEFAULT_RULES = Object.freeze({ decks: 6, soft17: 'steht', das: true, surrender: 'spaet', payout: '3:2' });
+export const DEFAULT_RULES = Object.freeze({ decks: 6, soft17: 'steht', das: true, payout: '3:2' });
 
 export function normalizeRules(r) {
   const d = DEFAULT_RULES;
@@ -49,7 +56,7 @@ export function normalizeRules(r) {
     decks: [1, 2, 4, 6, 8].includes(x.decks) ? x.decks : d.decks,
     soft17: x.soft17 === 'zieht' ? 'zieht' : 'steht',
     das: typeof x.das === 'boolean' ? x.das : d.das,
-    surrender: x.surrender === 'keine' ? 'keine' : 'spaet',
+    // "surrender" aus alten Daten wird ignoriert (Aufgeben gibt es nicht mehr).
     payout: x.payout === '6:5' ? '6:5' : '3:2'
   };
 }
@@ -62,16 +69,12 @@ export function rulesEqual(a, b) {
 
 export function rulesText(r) {
   const x = normalizeRules(r);
-  return `${x.decks} ${x.decks === 1 ? 'Deck' : 'Decks'} · ${x.soft17 === 'zieht' ? 'H17' : 'S17'} · ${x.das ? 'DAS' : 'kein DAS'} · ${x.surrender === 'spaet' ? 'Aufgeben' : 'kein Aufgeben'} · BJ ${x.payout}`;
+  return `${x.decks} ${x.decks === 1 ? 'Deck' : 'Decks'} · ${x.soft17 === 'zieht' ? 'H17' : 'S17'} · ${x.das ? 'DAS' : 'kein DAS'} · BJ ${x.payout}`;
 }
 
 const between = (u, lo, hi) => u >= lo && u <= hi;
 
 function hardCode(t, u, h17) {
-  if (t === 16 && (u === 9 || u === 10 || u === 11)) return 'Rh';
-  if (t === 15 && u === 10) return 'Rh';
-  if (h17 && t === 15 && u === 11) return 'Rh';
-  if (h17 && t === 17 && u === 11) return 'Rs';
   if (t <= 8) return 'H';
   if (t === 9) return between(u, 3, 6) ? 'D' : 'H';
   if (t === 10) return between(u, 2, 9) ? 'D' : 'H';
@@ -99,7 +102,7 @@ function pairCode(v, u, h17) {
   if (v === 11) return 'P';
   if (v === 10) return 'S';
   if (v === 9) return (between(u, 2, 6) || u === 8 || u === 9) ? 'P' : 'S';
-  if (v === 8) return h17 && u === 11 ? 'Rp' : 'P';
+  if (v === 8) return 'P';
   if (v === 7) return between(u, 2, 7) ? 'P' : 'H';
   if (v === 6) return u === 2 ? 'Ph' : (between(u, 3, 6) ? 'P' : 'H');
   if (v === 5) return hardCode(10, u, h17);

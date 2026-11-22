@@ -4,15 +4,25 @@
 const STABLE_FRAMES = 2;        // gleiche Erkennung in N Bildern hintereinander
 const UNSTABLE_WARN_MS = 1500;  // so lange unruhig -> "unsicher"
 const EMPTY_FRAMES_FOR_NEW_ROUND = 3;
+// Ab 0.6.0: Kurz keine Karten sichtbar (z. B. Hand über dem Tisch) beendet die
+// Runde NICHT. Erst wenn der Tisch mindestens so lange leer war, gelten die
+// nächsten Karten als neue Runde.
+const NEW_ROUND_EMPTY_MS = 2500;
+
+// raw.dealer: alle Karten im gemeinsamen Dealer-Feld (ab 0.6.0).
+// Alte Form mit dealerUp/dealerHole wird weiterhin verstanden.
+export function dealerList(r) {
+  if (Array.isArray(r.dealer)) return r.dealer;
+  return [r.dealerUp, r.dealerHole].filter(Boolean);
+}
 
 export function signatureOf(r) {
   const cards = (list) => list.map((c) => c.rank).join('.');
-  return [r.dealerUp ? r.dealerUp.rank : '-', r.dealerHole ? r.dealerHole.rank : '-',
-    cards(r.player), cards(r.split), r.unsure ? 'U' : ''].join('|');
+  return [cards(dealerList(r)), cards(r.player), cards(r.split), r.unsure ? 'U' : ''].join('|');
 }
 
 export function isEmptyTable(r) {
-  return !r.dealerUp && r.player.length === 0 && r.split.length === 0 && !r.cardFaceWithoutRank;
+  return dealerList(r).length === 0 && r.player.length === 0 && r.split.length === 0 && !r.cardFaceWithoutRank;
 }
 
 export class RoundTracker {
@@ -30,6 +40,8 @@ export class RoundTracker {
     this.sawEmpty = true;      // erste Karten nach Start = neue Runde
     this.prevStable = null;
     this._stableAt = null;
+    this.emptyAt = null;
+    this.lastCards = null;   // letzte stabile Auswertung MIT Karten
   }
 
   // Manuell "Neue Hand": nächste Karten gehören zu einer neuen Runde.
@@ -39,6 +51,8 @@ export class RoundTracker {
     this.stable = null;
     this.prevStable = null;
     this.sawEmpty = false;
+    this.emptyAt = null;
+    this.lastCards = null;
     this.lastChangeAt = now;
     return { type: 'round-start', round: this.round, source: 'manual' };
   }
@@ -61,7 +75,7 @@ export class RoundTracker {
     if (isStable) {
       const prev = this.stable;
       this.stable = raw;
-      if (!prev || signatureOf(prev) !== sig) events.push(...this._onStableChange(prev, raw));
+      if (!prev || signatureOf(prev) !== sig) events.push(...this._onStableChange(prev, raw, now));
     }
 
     if (isStable) this._stableAt = now;
@@ -83,16 +97,23 @@ export class RoundTracker {
     };
   }
 
-  _onStableChange(prev, cur) {
+  _onStableChange(prev, cur, now = Date.now()) {
     const events = [];
     const empty = isEmptyTable(cur);
     if (empty) {
       this.emptyStreak += 1;
-      if (this.emptyStreak >= 1) this.sawEmpty = true;
+      if (this.emptyAt == null) this.emptyAt = now;
       events.push({ type: 'table-empty' });
       return events;
     }
     this.emptyStreak = 0;
+    // War der Tisch lange genug leer? Sonst geht dieselbe Runde weiter.
+    if (this.emptyAt != null) {
+      if (now - this.emptyAt >= NEW_ROUND_EMPTY_MS || !this.lastCards) this.sawEmpty = true;
+      else prev = this.lastCards; // kurze Lücke: mit den Karten davor vergleichen
+      this.emptyAt = null;
+    }
+    this.lastCards = cur;
 
     const prevCards = prev ? prev.player : [];
     const replaced = prev && prevCards.length > 0 && (
@@ -122,4 +143,4 @@ export class RoundTracker {
   }
 }
 
-export const ROUND_CONSTANTS = { STABLE_FRAMES, UNSTABLE_WARN_MS, EMPTY_FRAMES_FOR_NEW_ROUND };
+export const ROUND_CONSTANTS = { STABLE_FRAMES, UNSTABLE_WARN_MS, EMPTY_FRAMES_FOR_NEW_ROUND, NEW_ROUND_EMPTY_MS };

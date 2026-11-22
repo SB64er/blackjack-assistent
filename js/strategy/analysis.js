@@ -95,7 +95,7 @@ export function analyzeProfile(profile, tableRules) {
     },
     assumptions: [
       ...MODEL_ASSUMPTIONS,
-      'Folgeentscheidungen (ab der 3. Karte) nach der Tabelle des Profils; Verdoppeln/Aufgeben ist dann nicht mehr möglich.',
+      'Folgeentscheidungen (ab der 3. Karte) nach der Tabelle des Profils; Verdoppeln ist dann nicht mehr möglich.',
       'Der Gesamterwartungswert ist ein Modellwert und keine Garantie für echte Spiele.'
     ],
     invalidCells,

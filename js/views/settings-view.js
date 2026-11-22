@@ -16,7 +16,6 @@ export const RULES = [
   { path: 'rules.decks',     label: 'Anzahl Decks',           options: [6, 8, 1, 2, 4],            text: (v) => String(v) },
   { path: 'rules.soft17',    label: 'Dealer bei Soft 17',     options: ['steht', 'zieht'],         text: (v) => (v === 'steht' ? 'Steht' : 'Zieht') },
   { path: 'rules.das',       label: 'Verdoppeln nach Split',  options: [true, false],              text: (v) => (v ? 'Erlaubt' : 'Nicht erlaubt') },
-  { path: 'rules.surrender', label: 'Aufgeben',               options: ['spaet', 'keine'],         text: (v) => (v === 'spaet' ? 'Spät' : 'Nicht erlaubt') },
   { path: 'rules.payout',    label: 'Blackjack zahlt',        options: ['3:2', '6:5'],             text: (v) => v }
 ];
 
@@ -35,6 +34,7 @@ export class SettingsView extends View {
     this.listen(this.ctx.recognition, 'status', () => this.render());
     this.listen(this.ctx.updates, 'change', () => this.render());
     this.listen(this.ctx.profiles, 'change', () => this.render());
+    if (this.ctx.archive) this.listen(this.ctx.archive, 'change', () => this.render());
     this.listen(this.ctx.display, 'change', () => this.render());
     this.render();
   }
@@ -197,6 +197,27 @@ export class SettingsView extends View {
             </button>
           </div>
           <p class="group-help">Die Empfehlungen im Hauptbildschirm richten sich nach dem aktiven Profil und den Tischregeln unten.</p>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">YUMEKO AI</h2>
+          <div class="list">
+            <button type="button" class="row row--link" data-nav="yumeko">
+              <span class="row-stack"><span>◆ Lernzentrum</span><small>Lernstatus, Archiv analysieren, Video lernen, Wissen, Strategieversionen</small></span>
+              <span class="row-value">${this.ctx.profiles.activeId === 'yumeko' ? '<span class="type-badge type-badge--yumeko">aktiv</span>' : ''} ${ICONS.chevron}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">SPIELARCHIV</h2>
+          <div class="list">
+            <button type="button" class="row row--link" data-nav="archiv">
+              <span class="row-stack"><span>Spielarchiv</span><small>${esc(this.ctx.archive ? this.ctx.archive.rounds.length : 0)} Runden gespeichert · suchen, korrigieren, exportieren</small></span>
+              <span class="row-value">${ICONS.chevron}</span>
+            </button>
+          </div>
+          <p class="group-help">Abgeschlossene Runden der Live-Erkennung werden automatisch gespeichert (nur Kartenwerte und Ergebnisse, keine Bilder).</p>
         </section>
 
         <section class="group">

@@ -132,7 +132,7 @@ export class CameraView extends View {
           for (const id of Object.keys(fresh)) calibration.draft[id] = fresh[id];
           calibration.emit('change');
         }
-        this.editor.select('dealerUp');
+        this.editor.select('dealer');
         break;
       }
       case 'select':
@@ -279,7 +279,7 @@ export class CameraView extends View {
           </button>`).join('');
       calib = `
         <div class="edit-box">
-          <p class="hint">Bereich ziehen = verschieben · Ecke ziehen = Grösse ändern. Lege B so gross an, dass zusätzliche Karten Platz haben.</p>
+          <p class="hint">Bereich ziehen = verschieben · Ecke ziehen = Grösse ändern. Lege A so gross an, dass alle Dealerkarten (offene, verdeckte und gezogene) Platz haben, und B so gross, dass zusätzliche Karten Platz haben.</p>
           <div class="chips">${chips}</div>
           <label class="row row--check">
             <span>Split-Bereich C verwenden</span>

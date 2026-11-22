@@ -6,10 +6,10 @@
 // - Dealer schaut bei Ass/Zehn nach Blackjack (Peek). Alle Werte gelten
 //   unter der Bedingung, dass der Dealer KEINEN Blackjack hat.
 // - Split: einmal, kein erneutes Splitten; geteilte Asse erhalten je eine Karte.
-// - Aufgeben (spät) = −0,5 Einsätze.
+// - Kein Aufgeben (Surrender) – ab Version 0.6.0 entfernt.
 // - Anzahl Decks wird NICHT berücksichtigt (unendliches Deck). Bei 1–2 Decks
 //   weichen echte Werte etwas ab; Simulationen mit endlichem Schuh zeigen das.
-import { normalizeRules, ROWS, UPCARDS, cellKey, standardCode, CODES_BY_KIND } from './standard.js';
+import { normalizeRules, ROWS, UPCARDS, cellKey, standardCode, CODES_BY_KIND, modernCode } from './standard.js';
 import { resolveCode, ACTIONS } from './engine.js';
 
 export const CARD_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -20,7 +20,7 @@ export const MODEL_ASSUMPTIONS = [
   'Unendlich viele Decks: jede Karte gleich wahrscheinlich (2–9 und Ass je 1/13, Zehnerwert 4/13).',
   'Der Dealer prüft bei Ass oder Zehn auf Blackjack (Peek); Entscheidungswerte gelten ohne Dealer-Blackjack.',
   'Split nur einmal (kein erneutes Splitten); geteilte Asse erhalten je genau eine Karte.',
-  'Spätes Aufgeben kostet die Hälfte des Einsatzes.',
+  'Aufgeben (Surrender) wird nicht angeboten.',
   'Die Anzahl Decks fliesst nicht ein; bei 1–2 Decks sind kleine Abweichungen möglich.'
 ];
 
@@ -150,7 +150,6 @@ export class UpcardModel {
       [ACTIONS.DOUBLE]: this.double(t, s)
     };
     if (kind === 'pair') out[ACTIONS.SPLIT] = this.split(value);
-    if (this.rules.surrender === 'spaet') out[ACTIONS.SURRENDER] = -0.5;
     return out;
   }
 }
@@ -158,12 +157,12 @@ export class UpcardModel {
 const memoModels = new Map();
 export function modelFor(up, rules) {
   const r = normalizeRules(rules);
-  const key = `${up}|${r.soft17}|${r.das}|${r.surrender}`;
+  const key = `${up}|${r.soft17}|${r.das}`;
   if (!memoModels.has(key)) memoModels.set(key, new UpcardModel(up, r));
   return memoModels.get(key);
 }
 
-const ACTION_ORDER = [ACTIONS.STAND, ACTIONS.HIT, ACTIONS.DOUBLE, ACTIONS.SPLIT, ACTIONS.SURRENDER];
+const ACTION_ORDER = [ACTIONS.STAND, ACTIONS.HIT, ACTIONS.DOUBLE, ACTIONS.SPLIT];
 
 function bestOf(evs) {
   let best = null;
@@ -177,15 +176,8 @@ function bestOf(evs) {
 // Für jede Zelle: beste Aktion und der passende Tabellencode.
 function codeFor(kind, evs) {
   const best = bestOf(evs);
-  const noSur = { ...evs }; delete noSur[ACTIONS.SURRENDER];
-  const fallback = bestOf(noSur); // falls Aufgeben nicht erlaubt
-  const noDouble = { ...noSur }; delete noDouble[ACTIONS.DOUBLE];
+  const noDouble = { ...evs }; delete noDouble[ACTIONS.DOUBLE];
   const afterDouble = bestOf(noDouble);
-  if (best === ACTIONS.SURRENDER) {
-    if (fallback === ACTIONS.SPLIT) return 'Rp';
-    if (fallback === ACTIONS.STAND) return 'Rs';
-    return 'Rh';
-  }
   if (best === ACTIONS.DOUBLE) return afterDouble === ACTIONS.STAND ? 'Ds' : 'D';
   if (best === ACTIONS.SPLIT) return 'P';
   if (best === ACTIONS.STAND) return 'S';
@@ -223,12 +215,11 @@ export function profilePolicy(overrides, strategyRules, tableRules) {
     const allowed = {
       double: count === 2 && (!afterSplit || tr.das),
       split: pairValue != null && !afterSplit,
-      surrender: count === 2 && !afterSplit && tr.surrender === 'spaet',
       das: tr.das
     };
     const look = (kind, value) => {
       const key = cellKey(kind, value, up);
-      const own = overrides && overrides[key];
+      const own = overrides && overrides[key] != null ? modernCode(overrides[key]) : null;
       const code = own != null && CODES_BY_KIND[kind].includes(own) ? own : standardCode(kind, value, up, strategyRules);
       return resolveCode(code, allowed);
     };
@@ -248,7 +239,6 @@ function policyHandEV(m, policy, t, s, count, afterSplit, memo) {
   let ev;
   if (a === ACTIONS.STAND) ev = m.stand(t);
   else if (a === ACTIONS.DOUBLE) ev = m.double(t, s);
-  else if (a === ACTIONS.SURRENDER) ev = -0.5;
   else {
     ev = 0;
     for (let i = 0; i < CARD_VALUES.length; i++) {
@@ -290,7 +280,6 @@ export function strategyEV(rules, policy = null) {
           if (act === ACTIONS.SPLIT) ev = splitPolicyEV(m, policy, pair);
           else if (act === ACTIONS.STAND) ev = m.stand(t);
           else if (act === ACTIONS.DOUBLE) ev = m.double(t, s);
-          else if (act === ACTIONS.SURRENDER) ev = -0.5;
           else ev = policyHandEV(m, policy, t, s, 2, false, memo);
           // HIT: Folgekarten nach Policy (memo-Schlüssel ohne Paarinformation ok, da count > 2)
           if (act === ACTIONS.HIT) {
@@ -302,7 +291,6 @@ export function strategyEV(rules, policy = null) {
           }
         } else {
           const evs = m.cellEVs(pair ? 'pair' : (s ? 'soft' : 'hard'), pair || t);
-          if (r.surrender !== 'spaet') delete evs[ACTIONS.SURRENDER];
           ev = Math.max(...Object.values(evs));
         }
         evUp += p * ((1 - pDbj) * ev - pDbj);

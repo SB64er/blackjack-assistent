@@ -15,7 +15,7 @@
 //  - Gesendet werden nur die Tischregeln – keine Kamerabilder, keine Muster.
 import { load, save, remove } from '../core/store.js';
 import { computeStrategy, MODEL_ASSUMPTIONS } from './ev.js';
-import { standardCode, normalizeRules, parseKey, CODES_BY_KIND, rulesText, cellKey, ROWS, UPCARDS } from './standard.js';
+import { standardCode, normalizeRules, parseKey, CODES_BY_KIND, modernCode, rulesText, cellKey, ROWS, UPCARDS } from './standard.js';
 import { resolveCode } from './engine.js';
 import { APP_VERSION } from '../core/version.js';
 
@@ -104,9 +104,10 @@ export function validateResearchResponse(body) {
     .slice(0, 12)
     .map((a) => ({ name: a.name.slice(0, 120), summary: typeof a.summary === 'string' ? a.summary.slice(0, 1200) : '' }));
   const suggestions = (Array.isArray(body.suggestions) ? body.suggestions : [])
-    .filter((s) => s && parseKey(s.key) && CODES_BY_KIND[parseKey(s.key).kind].includes(s.code))
+    .filter((s) => s && parseKey(s.key) && CODES_BY_KIND[parseKey(s.key).kind].includes(modernCode(s.code)))
     .slice(0, 300)
-    .map((s) => ({ key: s.key, code: s.code, rationale: typeof s.rationale === 'string' ? s.rationale.slice(0, 600) : '' }));
+    // Aufgeben-Codes (Rh/Rs/Rp) gibt es nicht mehr: als Aktion ohne Aufgeben werten.
+    .map((s) => ({ key: s.key, code: modernCode(s.code), ...(modernCode(s.code) !== s.code ? { originalCode: s.code } : {}), rationale: typeof s.rationale === 'string' ? s.rationale.slice(0, 600) : '' }));
   return {
     summary: typeof body.summary === 'string' ? body.summary.slice(0, 4000) : '',
     sources: clean,
@@ -163,8 +164,8 @@ export class RemoteResearchProvider {
 // --- Strategie entwickeln -------------------------------------------------
 
 const ALLOW_SETS = [
-  { double: true, split: true, surrender: true, das: true },
-  { double: false, split: false, surrender: false, das: false }
+  { double: true, split: true, das: true },
+  { double: false, split: false, das: false }
 ];
 
 /** Code der Gesamtsumme eines Paars (so wird gespielt, wenn nicht geteilt wird). */
@@ -188,7 +189,7 @@ export function codesEquivalent(a, b, rules, key = null) {
     return out === null && total ? resolveCode(total, x) : out;
   };
   return ALLOW_SETS.every((al) => {
-    const x = { ...al, surrender: al.surrender && r.surrender === 'spaet', das: al.das && r.das };
+    const x = { ...al, das: al.das && r.das };
     return res(a, x) === res(b, x);
   });
 }

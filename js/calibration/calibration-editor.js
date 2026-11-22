@@ -22,7 +22,7 @@ export class CalibrationEditor {
     this.regions = null;
     this.editing = false;
     this.dimmed = false;
-    this.selected = 'dealerUp';
+    this.selected = 'dealer';
     this._drag = null;
 
     this.overlay = document.createElement('div');

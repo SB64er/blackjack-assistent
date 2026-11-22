@@ -73,14 +73,13 @@ export class Simulation {
   }
 
   _playHand(cards, up, afterSplit) {
-    // liefert [{ cards, bet, done:'bust'|'surrender'|null }]
+    // liefert [{ cards, bet }]
     let bet = 1;
     for (;;) {
       const t = total(cards).t;
       if (t >= 21) break;
       const a = this._decide(cards, up, afterSplit);
       if (a === ACTIONS.STAND || a == null) break;
-      if (a === ACTIONS.SURRENDER) return [{ cards, bet, surrender: true }];
       if (a === ACTIONS.DOUBLE) { bet = 2; cards.push(this._draw()); break; }
       if (a === ACTIONS.SPLIT) {
         const out = [];
@@ -109,7 +108,7 @@ export class Simulation {
     if (pBJ) return this.payout;
     const hands = this._playHand(p, up, false);
     let result = 0;
-    const live = hands.filter((h) => !h.surrender && total(h.cards).t <= 21);
+    const live = hands.filter((h) => total(h.cards).t <= 21);
     if (live.length) {
       for (;;) {
         const d = total(dealer);
@@ -119,7 +118,6 @@ export class Simulation {
     }
     const dt = total(dealer).t;
     for (const h of hands) {
-      if (h.surrender) { result -= 0.5 * h.bet; continue; }
       const pt = total(h.cards).t;
       if (pt > 21) result -= h.bet;
       else if (dt > 21 || pt > dt) result += h.bet;

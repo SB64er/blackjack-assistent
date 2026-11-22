@@ -6,6 +6,7 @@ import { Emitter } from '../core/events.js';
 import { CameraState } from '../camera/camera-service.js';
 import { analyzeRegion } from './analyzer.js';
 import { RoundTracker } from './round-tracker.js';
+import { RoundState } from '../game/round-state.js';
 
 const MAX_REGION_SIDE = 900;
 
@@ -29,6 +30,9 @@ export class RecognitionService extends Emitter {
     this.state = null;      // geglättetes Ergebnis
     this.lastEvent = null;
     this.tickMs = 0;
+    this.round = null;       // laufende Spielrunde (RoundState) – Karten bestätigt, ohne Doppelzählung
+    this.advise = null;      // (cards, up, afterSplit) => Empfehlung; wird von der App gesetzt
+    this.confirmFor = null;  // (rank) => zusätzliche Prüfungen (von YUMEKO gelernt)
     this._timer = null;
     this._canvases = new Map();
 
@@ -60,8 +64,21 @@ export class RecognitionService extends Emitter {
   }
 
   _canScan() {
+    if (this.pausedFor) return false;
     const b = this.blocker();
     return !document.hidden && (b === null || b === RecognitionReason.TEMPLATES);
+  }
+
+  /** Live-Erkennung anhalten (z. B. während YUMEKO ein Video lernt – keine Spielrunden aus Videos). */
+  pause(reason) {
+    this.pausedFor = reason || 'pausiert';
+    this._evaluate();
+  }
+
+  resume() {
+    this.pausedFor = null;
+    this.tracker.reset();
+    this._evaluate();
   }
 
   _evaluate() {
@@ -72,11 +89,36 @@ export class RecognitionService extends Emitter {
       clearTimeout(this._timer);
       this._timer = null;
       this.latest = null;
+      // Unterbrechung (App im Hintergrund, Kamera kurz aus …) beendet die Runde NICHT.
     }
     this.emit('status', this.blocker());
   }
 
+  _startRound(source) {
+    this._endRound('naechste-runde');
+    this.round = new RoundState({
+      source,
+      advise: (cards, up, afterSplit) => (this.advise ? this.advise(cards, up, afterSplit) : null),
+      confirmFor: (rank) => (this.confirmFor ? this.confirmFor(rank) : 0)
+    });
+    this.emit('round-start', this.round);
+  }
+
+  /** Laufende Runde beenden und (falls sie Karten hat) zum Archivieren melden. */
+  _endRound(reason) {
+    const r = this.round;
+    this.round = null;
+    if (r && r.hasContent()) this.emit('round-end', { round: r, reason, at: Date.now() });
+  }
+
+  /** Runde von Hand abschliessen (z. B. Knopf "Runde abschliessen"). */
+  finishRound() {
+    this._endRound('manuell');
+    this.emit('update', this.state);
+  }
+
   newHand() {
+    this._startRound('manual');
     const ev = this.tracker.newHand();
     this.state = { ...(this.state || {}), round: this.tracker.round, result: null, stable: false, uncertain: false, empty: true };
     this.lastEvent = { ...ev, at: Date.now() };
@@ -127,7 +169,7 @@ export class RecognitionService extends Emitter {
     const cal = this.calibration.saved;
     if (!dims || !cal) return;
     const templates = this.templates.items;
-    const ids = ['dealerUp', 'dealerHole', 'player'];
+    const ids = ['dealer', 'player'];
     if (cal.splitEnabled) ids.push('split');
 
     const regions = {};
@@ -142,22 +184,35 @@ export class RecognitionService extends Emitter {
       return;
     }
 
-    const first = (r) => (r && r.cards.length ? [...r.cards].sort((a, b) => b.score - a.score)[0] : null);
+    // Ein gemeinsames Dealer-Feld: alle erkannten Dealerkarten (links nach rechts).
     const raw = {
-      dealerUp: first(regions.dealerUp),
-      dealerHole: first(regions.dealerHole),
+      dealer: regions.dealer.cards,
       player: regions.player.cards,
       split: regions.split ? regions.split.cards : [],
       unsure: Object.values(regions).some((r) => r.unsure),
-      cardFaceWithoutRank: (regions.dealerUp.whiteRatio > 0.25 && regions.dealerUp.cards.length === 0) ||
+      cardFaceWithoutRank: (regions.dealer.whiteRatio > 0.12 && regions.dealer.cards.length === 0) ||
         (regions.player.whiteRatio > 0.06 && regions.player.cards.length === 0)
     };
-    const { state, events } = this.tracker.push(raw);
+    this.ingest(raw, Date.now());
+  }
+
+  /** Eine Bildauswertung verarbeiten (auch für Tests ohne Kamera nutzbar). */
+  ingest(raw, now = Date.now()) {
+    const { state, events } = this.tracker.push(raw, now);
     this.state = state;
     for (const ev of events) {
-      this.lastEvent = { ...ev, at: Date.now() };
+      if (ev.type === 'round-start') this._startRound(ev.source || 'auto');
+      this.lastEvent = { ...ev, at: now };
       this.emit('event', this.lastEvent);
     }
+    if (state.stable && state.result) {
+      if (!this.round && !state.empty) this._startRound('auto');
+      if (this.round) {
+        const changes = this.round.update(state.result, now);
+        if (changes.length) this.emit('round-update', this.round);
+      }
+    }
+    if (this.round && this.round.endedByEmpty(now)) this._endRound('tisch-leer');
     this.emit('scan', this.latest);
     this.emit('update', state);
   }

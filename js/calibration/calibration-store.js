@@ -3,21 +3,51 @@ import { load, save, remove } from '../core/store.js';
 import { isValidRect, clampRect, orientationOf, aspectOf, aspectMatches } from './geometry.js';
 
 const KEY = 'calibration';
-export const CALIBRATION_VERSION = 1;
+const BACKUP_V1_KEY = 'calibration.v1backup';
+// Version 2 (ab App 0.6.0): EIN gemeinsames Dealer-Feld statt A1/A2.
+export const CALIBRATION_VERSION = 2;
 
 export const REGION_DEFS = [
-  { id: 'dealerUp',   group: 'A', short: 'A1', label: 'Dealer – offene Karte',   color: '#60A5FA', optional: false },
-  { id: 'dealerHole', group: 'A', short: 'A2', label: 'Dealer – verdeckte Karte', color: '#A5C8FB', optional: false },
-  { id: 'player',     group: 'B', short: 'B',  label: 'Spieler – deine Karten',   color: '#34D399', optional: false },
-  { id: 'split',      group: 'C', short: 'C',  label: 'Split – zweite Hand',      color: '#F472B6', optional: true }
+  { id: 'dealer', group: 'A', short: 'A', label: 'Dealer – alle Dealerkarten', color: '#60A5FA', optional: false },
+  { id: 'player', group: 'B', short: 'B', label: 'Spieler – deine Karten',     color: '#34D399', optional: false },
+  { id: 'split',  group: 'C', short: 'C', label: 'Split – zweite Hand',        color: '#F472B6', optional: true }
 ];
 
 export const DEFAULT_REGIONS = Object.freeze({
-  dealerUp:   { x: 0.38, y: 0.12, w: 0.10, h: 0.22 },
-  dealerHole: { x: 0.50, y: 0.12, w: 0.10, h: 0.22 },
-  player:     { x: 0.28, y: 0.56, w: 0.34, h: 0.28 },
-  split:      { x: 0.64, y: 0.56, w: 0.30, h: 0.28 }
+  dealer: { x: 0.34, y: 0.10, w: 0.32, h: 0.26 },
+  player: { x: 0.28, y: 0.56, w: 0.34, h: 0.28 },
+  split:  { x: 0.64, y: 0.56, w: 0.30, h: 0.28 }
 });
+
+/** Umschliessendes Rechteck zweier Bereiche (für die Migration A1 + A2 -> A). */
+export function unionRect(a, b) {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/**
+ * Kalibrierung aus Version 1 (zwei Dealer-Felder) in Version 2 übernehmen.
+ * Das neue Dealer-Feld umschliesst beide alten Felder; die alten Felder bleiben
+ * unter legacy erhalten. Liefert null, wenn die Daten unbrauchbar sind.
+ */
+export function migrateCalibrationV1(c) {
+  if (!c || c.version !== 1 || !c.frame || !c.regions) return null;
+  const { dealerUp, dealerHole, player, split } = c.regions;
+  if (!isValidRect(dealerUp) || !isValidRect(player)) return null;
+  const dealer = clampRect(isValidRect(dealerHole) ? unionRect(dealerUp, dealerHole) : dealerUp);
+  const regions = { dealer, player: { ...player } };
+  if (isValidRect(split)) regions.split = { ...split };
+  return {
+    version: CALIBRATION_VERSION,
+    savedAt: c.savedAt,
+    migratedAt: new Date().toISOString(),
+    frame: { ...c.frame },
+    regions,
+    splitEnabled: !!c.splitEnabled,
+    legacy: { version: 1, dealerUp: { ...dealerUp }, dealerHole: dealerHole ? { ...dealerHole } : null }
+  };
+}
 
 export function cloneRegions(regions) {
   const out = {};
@@ -37,6 +67,14 @@ function isValidCalibration(c) {
 
 export function loadCalibration() {
   const c = load(KEY, null);
+  if (c && c.version === 1) {
+    const m = migrateCalibrationV1(c);
+    if (!m || !isValidCalibration(m)) return null;
+    // Sicherung der alten Kalibrierung, dann die neue Struktur speichern.
+    if (load(BACKUP_V1_KEY, null) == null) save(BACKUP_V1_KEY, c);
+    save(KEY, m);
+    return m;
+  }
   return isValidCalibration(c) ? c : null;
 }
 
@@ -58,6 +96,8 @@ export function saveCalibration({ regions, splitEnabled, frame }) {
     regions: cleaned,
     splitEnabled: !!splitEnabled
   };
+  const prev = load(KEY, null);
+  if (prev && prev.legacy) data.legacy = prev.legacy;
   if (!save(KEY, data)) {
     throw new Error('Speichern fehlgeschlagen (lokaler Speicher nicht verfügbar).');
   }

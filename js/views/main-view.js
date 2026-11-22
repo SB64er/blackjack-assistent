@@ -4,7 +4,12 @@ import { ICONS, esc } from '../core/dom.js';
 import { DEMO_SCENARIOS, RECOMMENDATIONS } from '../demo/scenarios.js';
 import { handInfo, upcardLabel, RANK_NAMES } from '../game/hand.js';
 import { RecognitionReason } from '../recognition/recognition-service.js';
-import { decide, ACTION_TO_RECOMMENDATION } from '../strategy/engine.js';
+import { decide, ACTION_TO_RECOMMENDATION, ACTION_LABEL } from '../strategy/engine.js';
+import { decisionEVs } from '../yumeko/archive-analysis.js';
+import { pct } from '../strategy/analysis.js';
+import { OUTCOME_LABEL } from '../game/settle.js';
+
+const plain = (c) => (c ? { rank: c.rank, confident: c.confident !== false, ...(c.suit ? { suit: c.suit } : {}) } : null);
 
 let demoIndex = 0; // bleibt beim Wechsel zwischen Ansichten erhalten
 
@@ -80,6 +85,9 @@ export class MainView extends View {
     this.listen(this.ctx.profiles, 'change', r);
     this.listen(recognition, 'update', r);
     this.listen(recognition, 'status', r);
+    this.listen(recognition, 'round-update', r);
+    if (this.ctx.archive) this.listen(this.ctx.archive, 'change', r);
+    if (this.ctx.ui) this.listen(this.ctx.ui, 'change', r);
     this.listen(recognition, 'event', (ev) => {
       this._event = ev;
       clearTimeout(this._eventTimer);
@@ -97,8 +105,22 @@ export class MainView extends View {
   _onClick(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    const { settings, recognition } = this.ctx;
+    const { settings, recognition, archive, ui } = this.ctx;
     switch (btn.dataset.action) {
+      case 'confirm-outcome': {
+        // Unvollständige Runde: Ergebnis von Hand bestätigen.
+        const id = ui.pendingRound;
+        const hand = Number(btn.dataset.hand);
+        const outcome = btn.dataset.outcome;
+        archive.update(id, (rec) => {
+          if (rec.hands[hand]) { rec.hands[hand].outcome = outcome; rec.hands[hand].outcomeSource = 'manual'; }
+        }, `Ergebnis Hand ${hand + 1}: ${OUTCOME_LABEL[outcome]}`).then((rec) => {
+          if (rec.hands.every((h) => h.outcome)) ui.set('pendingRound', null);
+        }).catch(() => {});
+        break;
+      }
+      case 'dismiss-pending': ui.set('pendingRound', null); break;
+      case 'finish-round': recognition.finishRound(); break;
       case 'mode-auto': settings.set('roundMode', 'automatisch'); break;
       case 'mode-manual': settings.set('roundMode', 'manuell'); break;
       case 'speech': settings.set('speech', !settings.get('speech')); break;
@@ -126,7 +148,7 @@ export class MainView extends View {
   // Spielzustand für die Anzeige (Demo oder Live).
   _model() {
     const { settings, recognition, templates, camera, profiles } = this.ctx;
-    const profile = { id: profiles.active.id, name: profiles.active.name, type: profiles.active.type };
+    const profile = { id: profiles.active.id, name: profiles.active.name, type: profiles.active.type, version: profiles.active.type === 'yumeko' ? (profiles.active.data.strategyVersion || 0) : null };
     if (settings.get('demo')) {
       const s = DEMO_SCENARIOS[demoIndex];
       const confident = s.player.every((c) => c.confident) && s.dealerUp.confident;
@@ -142,27 +164,44 @@ export class MainView extends View {
       };
     }
     const blocker = recognition.blocker();
-    const m = { mode: 'live', blocker, dealerUp: null, dealerHole: null, hands: [{ title: 'DEINE HAND', cards: [] }], uncertain: false, cameraError: camera.error };
+    const m = { mode: 'live', blocker, dealerUp: null, dealerCards: [], holeKnown: false, hands: [{ title: 'DEINE HAND', cards: [] }], uncertain: false, cameraError: camera.error };
     if (blocker) return m;
     const st = recognition.state;
     const res = st && st.result;
     m.round = st ? st.round : 0;
     m.waiting = !res;
-    if (res) {
-      m.dealerUp = res.dealerUp;
-      m.dealerHole = res.dealerHole;
-      m.hands = [{ title: res.split.length ? 'HAND 1' : 'DEINE HAND', cards: res.player }];
-      if (res.split.length) m.hands.push({ title: 'HAND 2 (SPLIT)', cards: res.split });
+    // Bestätigte Karten der laufenden Runde (mehrfach geprüft, ohne Doppelzählung).
+    const snap = recognition.round ? recognition.round.snapshot() : null;
+    if (snap && (snap.dealer.length || snap.hands.some((h) => h.cards.length))) {
+      m.dealerCards = snap.dealer.map(plain);
+      m.dealerUp = m.dealerCards[0] || null;
+      m.holeKnown = snap.holeKnown;
+      const multi = snap.hands.length > 1;
+      m.hands = snap.hands.map((h, i) => ({ title: multi ? (i ? 'HAND 2 (SPLIT)' : 'HAND 1') : 'DEINE HAND', cards: h.cards.map(plain) }));
+      m.empty = false;
+      m.waiting = false;
+      m.roundActive = true;
+    } else if (res) {
       m.empty = st.empty;
     }
     m.uncertain = !!(st && st.uncertain);
     m.missing = templates.missingRanks();
     m.profile = profile;
-    if (res && !m.uncertain && res.dealerUp) {
+    if (!m.uncertain && m.dealerUp) {
       const split = m.hands.length > 1;
-      m.advice = m.hands.map((h) => this._advise(h.cards, res.dealerUp, split));
+      m.advice = m.hands.map((h) => this._advise(h.cards, m.dealerUp, split));
+      if (profile.type === 'yumeko' && m.advice[0]) m.explain = this._explain(m.hands[0].cards, m.dealerUp, split);
     }
     return m;
+  }
+
+  // YUMEKO: nachvollziehbare Begründung aus dem Rechenmodell.
+  _explain(cards, up, afterSplit) {
+    const d = decisionEVs(cards.map((c) => c.rank), up.rank, this.ctx.settings.get('rules'), afterSplit);
+    if (!d) return null;
+    const sorted = Object.entries(d.evs).sort((a, b) => b[1] - a[1]);
+    if (sorted.length < 2) return null;
+    return `Rechenmodell: ${ACTION_LABEL[sorted[0][0]]} ${pct(sorted[0][1] - sorted[1][1], 2)} besser als ${ACTION_LABEL[sorted[1][0]]}`;
   }
 
   _centerHtml(m) {
@@ -179,7 +218,7 @@ export class MainView extends View {
     }
     const profileTag = (r) => `
           <button type="button" class="profile-tag profile-tag--${esc(m.profile.type)}" data-nav="strategie" aria-label="Strategieprofil: ${esc(m.profile.name)} – wechseln">
-            <span class="profile-tag-dot"></span>${esc(m.profile.name)}${r && r.decision && r.decision.deviates ? ' · weicht von Standard ab' : ''}
+            <span class="profile-tag-dot"></span>${esc(m.profile.name)}${m.profile.type === 'yumeko' ? ` · v${m.profile.version}` : ''}${r && r.decision && r.decision.deviates ? ' · weicht von Standard ab' : ''}
           </button>`;
     if (m.mode === 'demo' && m.recommendation) {
       const r = m.recommendation;
@@ -209,7 +248,7 @@ export class MainView extends View {
           camera.canResume ? 'Die App war im Hintergrund. Tippe auf „Kamera fortsetzen“.' : 'Starte die Kamera, damit die Karten erkannt werden.',
           `<div class="rec-actions">${cameraButton(camera)}</div>`);
       case RecognitionReason.CALIBRATION:
-        return idle('Noch nicht kalibriert', 'Markiere zuerst die Kartenbereiche A1, A2 und B.', '<div class="rec-actions"><button type="button" class="btn btn--primary" data-nav="kamera">Zur Kalibrierung</button></div>');
+        return idle('Noch nicht kalibriert', 'Markiere zuerst die Kartenbereiche A (Dealer) und B (Spieler).', '<div class="rec-actions"><button type="button" class="btn btn--primary" data-nav="kamera">Zur Kalibrierung</button></div>');
       case RecognitionReason.EDITING:
         return idle('Kalibrierung offen', 'Speichere oder verwirf die Kalibrierung.', '<div class="rec-actions"><button type="button" class="btn btn--primary" data-nav="kamera">Zur Kalibrierung</button></div>');
       case RecognitionReason.ORIENTATION: {
@@ -242,6 +281,7 @@ export class MainView extends View {
         <span class="rec-kicker">EMPFEHLUNG${m.round ? ` · RUNDE ${m.round}` : ''}${second ? ' · HAND 1' : ''}</span>
         <span class="rec-word" data-len="${adv.label.length}">${esc(adv.label)}</span>
         <span class="rec-hand">${esc(`${main.text}${vs}`)}${second ? esc(` · Hand 2: ${second.text}${adv2 ? ` → ${adv2.label}` : ''}`) : ''}</span>
+        ${m.explain ? `<span class="rec-explain">◆ ${esc(m.explain)}</span>` : ''}
         ${profileTag(adv)}
       </section>`;
     }
@@ -271,8 +311,20 @@ export class MainView extends View {
 
     // Hinweise
     let notice = '';
+    const pending = !demo && this.ctx.ui && this.ctx.ui.pendingRound && this.ctx.archive ? this.ctx.archive.get(this.ctx.ui.pendingRound) : null;
     if (camera.playBlocked) {
       notice = `<button type="button" class="warn-strip" data-camera="play">${ICONS.warning}<span>Kamerabild angehalten – hier tippen, um es anzuzeigen</span></button>`;
+    } else if (pending && pending.status === 'incomplete') {
+      const open = pending.hands.map((h, i) => ({ h, i })).filter((x) => !x.h.outcome);
+      notice = `
+        <div class="confirm-strip" role="alert">
+          <span class="confirm-text">${ICONS.warning}<span><b>Runde unvollständig.</b> ${esc(open[0] && open[0].h.outcomeReason ? open[0].h.outcomeReason : 'Ergebnis nicht eindeutig erkannt.')} Bitte bestätigen:</span></span>
+          ${open.map(({ i }) => `
+            <span class="confirm-row">${pending.hands.length > 1 ? `<b>Hand ${i + 1}</b>` : ''}
+              ${['win', 'loss', 'push'].map((o) => `<button type="button" class="btn btn--compact btn--${o === 'win' ? 'success' : (o === 'loss' ? 'danger' : 'secondary')}" data-action="confirm-outcome" data-hand="${i}" data-outcome="${o}">${OUTCOME_LABEL[o]}</button>`).join('')}
+            </span>`).join('')}
+          <button type="button" class="btn btn--ghost btn--compact" data-action="dismiss-pending">Später im Archiv</button>
+        </div>`;
     } else if (this._event && EVENT_TEXT[this._event.type] && !demo) {
       notice = `<div class="toast" role="status">${ICONS.check}<span>${esc(EVENT_TEXT[this._event.type])}</span></div>`;
     } else if (compat || cam.tone === 'warn') {
@@ -294,10 +346,16 @@ export class MainView extends View {
     // Spielbereich nur neu zeichnen, wenn sich etwas geändert hat
     // (verhindert verlorene Tipps bei 4 Auswertungen pro Sekunde).
     const key = JSON.stringify([m, demoIndex, manual, settings.get('speech'), camera.state, camera.canResume, camera.startingSlow]);
+    // Hinweis "prüfe Karten" ändert sich häufig – nicht Teil des Neuzeichnens.
     if (!force && key === this._lastKey) return;
     this._lastKey = key;
 
-    const hole = m.dealerHole ? cardHtml(m.dealerHole) : '<div class="card card--back" aria-label="Verdeckte Karte"></div>';
+    // Gemeinsames Dealer-Feld: offene Karte, zweite Karte (verdeckt, bis sie erkannt ist), weitere Karten.
+    const back = '<div class="card card--back" aria-label="Verdeckte Karte (unbekannt)"></div>';
+    const dealerCardsHtml = m.mode === 'demo' || !m.dealerCards || !m.dealerCards.length
+      ? `${cardHtml(m.dealerUp)}${back}`
+      : `${cardHtml(m.dealerCards[0])}${m.holeKnown ? m.dealerCards.slice(1).map(cardHtml).join('') : back}`;
+    const dealerInfo = m.holeKnown ? handInfo(m.dealerCards) : null;
     const hands = m.hands.map((hnd) => handBlock(hnd.title, hnd.cards, handInfo(hnd.cards))).join('');
     const showNewHand = manual;
     const autoInfo = !demo && m.round ? `Runde ${m.round} · automatisch` : 'Wartet auf neue Runde …';
@@ -306,11 +364,11 @@ export class MainView extends View {
       <section class="hand hand--dealer" aria-label="Dealer">
         <div class="hand-cards">
           <span class="kicker">DEALER</span>
-          <div class="cards">${cardHtml(m.dealerUp)}${hole}</div>
+          <div class="cards">${dealerCardsHtml}</div>
         </div>
         <div class="hand-value">
-          <span class="hand-value-label">offene Karte</span>
-          <span class="hand-value-num hand-value-num--sm">${esc(upcardLabel(m.dealerUp))}</span>
+          <span class="hand-value-label">${dealerInfo ? 'Dealer gesamt' : 'offene Karte'}</span>
+          <span class="hand-value-num hand-value-num--sm">${esc(dealerInfo ? String(dealerInfo.total ?? '–') : upcardLabel(m.dealerUp))}</span>
         </div>
       </section>
 
@@ -326,6 +384,7 @@ export class MainView extends View {
         ${showNewHand
           ? '<button type="button" class="btn btn--primary" data-action="new-hand">Neue Hand</button>'
           : `<div class="waiting"><span class="dot dot--ok"></span>${esc(autoInfo)}</div>`}
+        ${!demo && m.roundActive ? '<button type="button" class="btn btn--ghost" data-action="finish-round">Runde abschliessen</button>' : ''}
         ${demo ? `
           <button type="button" class="btn btn--ghost" data-action="next-demo">
             Demo: nächstes Szenario (${demoIndex + 1}/${DEMO_SCENARIOS.length}) ${ICONS.chevron}
