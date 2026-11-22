@@ -1,6 +1,9 @@
 // Einstiegspunkt: verbindet Einstellungen, Kamera, Kalibrierung, Erkennung und Ansichten.
 import { settings } from './core/settings.js';
 import { requestPersistentStorage } from './core/store.js';
+import { display } from './core/display.js';
+import { updates } from './core/updates.js';
+import { ICONS } from './core/dom.js';
 import { CameraService } from './camera/camera-service.js';
 import { CalibrationModel } from './calibration/calibration-model.js';
 import { TemplateStore } from './recognition/template-store.js';
@@ -21,7 +24,7 @@ const templates = new TemplateStore();
 const recognition = new RecognitionService({ camera, calibration, settings, templates });
 const test = new TestTracker({ camera, calibration });
 
-const ctx = { settings, camera, calibration, templates, recognition, test, navigate };
+const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, navigate };
 
 const ROUTES = {
   haupt: MainView,
@@ -54,10 +57,25 @@ function navigate(name) {
 
 // Zentrale Klicks: Navigation und Kamera (Start direkt im Tipp!).
 document.addEventListener('click', (e) => {
+  // Blockierte Wiedergabe (schwarzes Bild ohne Fehlermeldung): jeder Tipp gibt sie frei.
+  if (camera.playBlocked) camera.unblockPlayback();
   const cam = e.target.closest('[data-camera]');
   if (cam && !cam.disabled) {
-    if (cam.dataset.camera === 'start') camera.start();
-    else if (cam.dataset.camera === 'stop') camera.stop();
+    const a = cam.dataset.camera;
+    if (a === 'start') camera.start();
+    else if (a === 'retry') camera.start({ force: true });
+    else if (a === 'restart') camera.restart();
+    else if (a === 'stop') camera.stop();
+    else if (a === 'play') camera.unblockPlayback();
+    return;
+  }
+  const app = e.target.closest('[data-app]');
+  if (app && !app.disabled) {
+    const a = app.dataset.app;
+    if (a === 'fullscreen') display.toggleFullscreen();
+    else if (a === 'update-apply') updates.apply();
+    else if (a === 'update-check') updates.check();
+    else if (a === 'update-later') { updateDismissed = true; renderUpdateBar(); }
     return;
   }
   const nav = e.target.closest('[data-nav]');
@@ -82,10 +100,32 @@ camera.on('state', () => {
 
 requestPersistentStorage();
 
-if ('serviceWorker' in navigator && window.isSecureContext) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service Worker nicht registriert', err));
-  });
+// :active-Rückmeldung beim Tippen auf iOS aktivieren.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
+// Hinweisleiste für neue Versionen (liegt über allen Ansichten).
+const updateBar = document.createElement('div');
+updateBar.className = 'update-bar';
+updateBar.setAttribute('role', 'status');
+updateBar.hidden = true;
+document.body.appendChild(updateBar);
+let updateDismissed = false;
+function renderUpdateBar() {
+  const show = updates.available && !updateDismissed;
+  updateBar.hidden = !show;
+  if (!show) return;
+  updateBar.innerHTML = `
+    <span class="update-bar-text">${ICONS.check}<span><b>Neue Version verfügbar.</b> Kalibrierung und angelernte Karten bleiben erhalten.</span></span>
+    <span class="update-bar-actions">
+      <button type="button" class="btn btn--ghost btn--compact" data-app="update-later">Später</button>
+      <button type="button" class="btn btn--primary btn--compact" data-app="update-apply">Aktualisieren</button>
+    </span>`;
+}
+updates.on('change', renderUpdateBar);
+
+if (updates.supported) {
+  if (document.readyState === 'complete') updates.register();
+  else window.addEventListener('load', () => updates.register());
 }
 
 // Für Fehlersuche in der Konsole

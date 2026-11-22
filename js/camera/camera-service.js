@@ -12,6 +12,11 @@
 // - Nach Rückkehr aus dem Hintergrund kann ein neuer Start ohne Tipp
 //   scheitern -> Zustand "pausiert", Button "Kamera fortsetzen".
 // - Das Video-Element wird nie aus dem Dokument entfernt (Dock).
+// - Phase 4: getUserMedia kann in Home-Bildschirm-Apps (v. a. iPad) ohne
+//   Fehlermeldung hängen bleiben -> Zeitlimit + "erneut versuchen" per Tipp.
+// - Phase 4: Wiedergabe kann ohne Fehlermeldung blockiert sein (schwarzes
+//   Bild) -> nächster Tipp irgendwo startet die Wiedergabe (playBlocked).
+// - Phase 4: Spur bleibt "stumm" (unterbrochen) -> automatisch neu anfordern.
 
 import { Emitter } from '../core/events.js';
 
@@ -34,6 +39,27 @@ export const CAMERA_STATE_LABEL = {
 };
 
 const NO_FRAME_TIMEOUT_MS = 4000;
+const START_TIMEOUT_MS = 10000;     // getUserMedia hängt -> Fehler statt ewig "startet"
+const START_SLOW_MS = 3500;         // ab hier darf der Benutzer neu antippen
+const INTERRUPTED_REPAIR_MS = 8000; // so lange "stumm" bei sichtbarer App -> neu anfordern
+const BLACK_REPAIR_MS = 5000;       // so lange komplett schwarz -> Video neu verbinden
+
+// Promise mit Zeitlimit. Kommt der Stream zu spät, wird er sofort freigegeben.
+function withTimeout(promise, ms) {
+  let timer;
+  let timedOut = false;
+  return new Promise((resolve, reject) => {
+    timer = setTimeout(() => { timedOut = true; reject({ name: 'Timeout', message: `keine Antwort nach ${ms / 1000} s` }); }, ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        if (timedOut) { try { v.getTracks().forEach((t) => t.stop()); } catch { /* egal */ } return; }
+        resolve(v);
+      },
+      (e) => { clearTimeout(timer); if (!timedOut) reject(e); }
+    );
+  });
+}
 
 export function isStandalone() {
   try {
@@ -68,6 +94,16 @@ export class CameraService extends Emitter {
     this._watchdog = null;
     this._repairStep = 0;
     this._lastTime = -1;
+    this.playBlocked = false;    // Wiedergabe vom System blockiert -> Tipp nötig
+    this.startingSlow = false;   // Start dauert ungewöhnlich lange
+    this.startedAt = 0;
+    this.startDurationMs = null;
+    this.repairs = 0;
+    this.brightness = null;      // mittlere Helligkeit 0–255 (Diagnose)
+    this._interruptedAt = 0;
+    this._blackSince = 0;
+    this._slowTimer = null;
+    this._probe = null;
 
     const v = document.createElement('video');
     v.className = 'camera-video';
@@ -92,6 +128,14 @@ export class CameraService extends Emitter {
     const emitDims = () => this.emit('dimensions', this.dimensions());
     v.addEventListener('loadedmetadata', emitDims);
     v.addEventListener('resize', emitDims);
+    v.addEventListener('playing', () => {
+      emitDims();
+      if (this.playBlocked) { this.playBlocked = false; this.emit('playback', true); }
+    });
+    // Läuft das Video, obwohl es pausiert wurde (z. B. durch Umhängen)? Neu starten.
+    v.addEventListener('pause', () => {
+      if (this.stream && this.state === CameraState.ACTIVE && !document.hidden) this._play();
+    });
 
     document.addEventListener('visibilitychange', () => this._onVisibilityChange());
     window.addEventListener('pagehide', () => this.stop());
@@ -143,17 +187,55 @@ export class CameraService extends Emitter {
   }
 
   _play() {
-    if (this.stream) this.video.play().catch(() => {});
+    if (!this.stream) return;
+    const p = this.video.play();
+    if (p && p.catch) {
+      p.catch((err) => {
+        // NotAllowedError: iOS verlangt einen Tipp für die Wiedergabe.
+        // Ohne diese Erkennung bliebe das Bild schwarz – ohne Fehlermeldung.
+        if (err && err.name === 'NotAllowedError' && this.stream && !this.playBlocked) {
+          this.playBlocked = true;
+          this.emit('playback', false);
+        }
+      });
+    }
+  }
+
+  // Im Tipp aufrufen: blockierte Wiedergabe freigeben (zählt als Benutzeraktion).
+  unblockPlayback() {
+    if (!this.stream || !this.video.paused) return false;
+    this.video.play().then(() => {
+      if (this.playBlocked) { this.playBlocked = false; this.emit('playback', true); }
+    }).catch(() => {});
+    return true;
+  }
+
+  // Kamera komplett neu starten – direkt im Tipp aufrufen.
+  restart() {
+    this.stop();
+    return this.start();
   }
 
   // WICHTIG: direkt im Klick-Handler aufrufen (Benutzerinteraktion).
-  async start() {
-    if (this.isRunning) return;
+  // force: auch während eines hängenden Starts neu beginnen.
+  async start({ force = false } = {}) {
+    if (this.isRunning && !(force && this.state === CameraState.STARTING)) return;
     if (!window.isSecureContext) return this._fail({ name: 'InsecureContext' });
     if (!CameraService.isSupported()) return this._fail({ name: 'Unsupported' });
 
     const token = ++this._startToken;
     this.error = null;
+    this.playBlocked = false;
+    this.startingSlow = false;
+    this.startedAt = performance.now();
+    this.startDurationMs = null;
+    clearTimeout(this._slowTimer);
+    this._slowTimer = setTimeout(() => {
+      if (token === this._startToken && this.state === CameraState.STARTING) {
+        this.startingSlow = true;
+        this.emit('state', this.state);
+      }
+    }, START_SLOW_MS);
     this._setState(CameraState.STARTING);
 
     let stream = null;
@@ -162,7 +244,7 @@ export class CameraService extends Emitter {
     for (const level of [0, 1, 2]) {
       try {
         // Der erste Aufruf erfolgt synchron im Klick (keine await davor).
-        stream = await navigator.mediaDevices.getUserMedia(this._constraints(level));
+        stream = await withTimeout(navigator.mediaDevices.getUserMedia(this._constraints(level)), START_TIMEOUT_MS);
         this.constraintLevel = level;
         break;
       } catch (err) {
@@ -176,8 +258,11 @@ export class CameraService extends Emitter {
       if (stream) stream.getTracks().forEach((t) => t.stop());
       return;
     }
+    clearTimeout(this._slowTimer);
+    this.startingSlow = false;
     if (!stream) return this._fail(lastErr);
 
+    this.startDurationMs = Math.round(performance.now() - this.startedAt);
     this._useStream(stream);
     this._setState(CameraState.ACTIVE);
     this.emit('dimensions', this.dimensions());
@@ -193,7 +278,10 @@ export class CameraService extends Emitter {
     if (track) {
       track.addEventListener('ended', () => this._onTrackEnded(track));
       track.addEventListener('mute', () => {
-        if (this.state === CameraState.ACTIVE && this.stream && this.stream.getVideoTracks()[0] === track) this._setState(CameraState.INTERRUPTED);
+        if (this.state === CameraState.ACTIVE && this.stream && this.stream.getVideoTracks()[0] === track) {
+          this._interruptedAt = performance.now();
+          this._setState(CameraState.INTERRUPTED);
+        }
       });
       track.addEventListener('unmute', () => {
         if (this.state === CameraState.INTERRUPTED) this._setState(CameraState.ACTIVE);
@@ -203,6 +291,8 @@ export class CameraService extends Emitter {
     this.frameCount = 0;
     this.lastFrameAt = performance.now();
     this._lastTime = -1;
+    this._blackSince = 0;
+    this.brightness = null;
     this._watchFrames();
     this._play();
     if (this.video.parentNode === this.dockEl) this.dockEl.hidden = false;
@@ -215,8 +305,11 @@ export class CameraService extends Emitter {
     const stream = this.stream;
     const onFrame = () => {
       if (this.stream !== stream) return;
-      this.frameCount += 1;
-      this.lastFrameAt = performance.now();
+      // Frames ohne Bildgrösse zählen nicht (iOS meldet sonst "läuft" bei schwarzem Bild).
+      if (v.videoWidth > 0) {
+        this.frameCount += 1;
+        this.lastFrameAt = performance.now();
+      }
       v.requestVideoFrameCallback(onFrame);
     };
     v.requestVideoFrameCallback(onFrame);
@@ -233,9 +326,53 @@ export class CameraService extends Emitter {
     this._watchdog = null;
   }
 
+  // Mittlere Helligkeit eines winzigen Ausschnitts (nur im Arbeitsspeicher).
+  _measureBrightness() {
+    const v = this.video;
+    if (!v.videoWidth || v.readyState < 2) return null;
+    try {
+      if (!this._probe) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 16; canvas.height = 9;
+        this._probe = canvas.getContext('2d', { willReadFrequently: true });
+      }
+      this._probe.drawImage(v, 0, 0, 16, 9);
+      const d = this._probe.getImageData(0, 0, 16, 9).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+      return Math.round(sum / (d.length / 4) / 3);
+    } catch {
+      return null;
+    }
+  }
+
   async _checkFrames() {
     if (!this.stream || document.hidden) return;
+    // Spur bleibt stumm, obwohl die App sichtbar ist -> Kamera neu anfordern.
+    if (this.state === CameraState.INTERRUPTED) {
+      if (this._interruptedAt && performance.now() - this._interruptedAt > INTERRUPTED_REPAIR_MS) {
+        this._interruptedAt = performance.now();
+        this._reacquire();
+      }
+      return;
+    }
     if (this.state !== CameraState.ACTIVE) return;
+    if (this.video.paused && !this.playBlocked) this._play();
+
+    // Komplett schwarzes Bild (bekannter iOS-Fehler): einmal Video neu verbinden.
+    const b = this._measureBrightness();
+    this.brightness = b;
+    if (b != null && b < 3 && !this.playBlocked) {
+      if (!this._blackSince) this._blackSince = performance.now();
+      else if (performance.now() - this._blackSince > BLACK_REPAIR_MS) {
+        this._blackSince = performance.now() + 60000; // höchstens einmal pro Minute
+        this._reattach();
+        this.emit('repair', 1);
+      }
+    } else if (b != null && b >= 3) {
+      this._blackSince = 0;
+    }
+
     // Fallback ohne requestVideoFrameCallback: currentTime beobachten.
     const t = this.video.currentTime;
     if (t !== this._lastTime && this.video.videoWidth > 0) {
@@ -254,28 +391,42 @@ export class CameraService extends Emitter {
     this._repairStep += 1;
     if (this._repairStep === 1) {
       // Reparatur 1: Stream neu ans Video hängen.
-      const s = this.stream;
-      this.video.srcObject = null;
-      this.video.srcObject = s;
-      this._watchFrames();
-      this._play();
+      this._reattach();
       this.emit('repair', 1);
     } else if (this._repairStep === 2) {
       // Reparatur 2: Kamera einmal komplett neu anfordern (einfachste Einstellung).
       this.emit('repair', 2);
-      const token = ++this._startToken;
-      this.stream.getTracks().forEach((tr) => tr.stop());
-      this.stream = null;
-      try {
-        const s = await navigator.mediaDevices.getUserMedia(this._constraints(2));
-        if (token !== this._startToken) { s.getTracks().forEach((tr) => tr.stop()); return; }
-        this._useStream(s);
-        this.constraintLevel = 2;
-      } catch (err) {
-        if (token === this._startToken) this._fail(err);
-      }
+      await this._reacquire();
     } else {
       this._fail({ name: 'NoFrames' });
+    }
+  }
+
+  _reattach() {
+    const s = this.stream;
+    if (!s) return;
+    this.repairs += 1;
+    this.video.srcObject = null;
+    this.video.srcObject = s;
+    this._watchFrames();
+    this._play();
+  }
+
+  async _reacquire() {
+    if (!this.stream) return;
+    this.repairs += 1;
+    const token = ++this._startToken;
+    this.stream.getTracks().forEach((tr) => tr.stop());
+    this.stream = null;
+    try {
+      const s = await withTimeout(navigator.mediaDevices.getUserMedia(this._constraints(this.constraintLevel ?? 2)), START_TIMEOUT_MS);
+      if (token !== this._startToken) { s.getTracks().forEach((tr) => tr.stop()); return; }
+      this._useStream(s);
+      this._interruptedAt = 0;
+      this._setState(CameraState.ACTIVE);
+      this.emit('dimensions', this.dimensions());
+    } catch (err) {
+      if (token === this._startToken) this._fail(err);
     }
   }
 
@@ -283,6 +434,10 @@ export class CameraService extends Emitter {
   stop({ resumeLater = false } = {}) {
     this._startToken++;
     this._stopWatchdog();
+    clearTimeout(this._slowTimer);
+    this.startingSlow = false;
+    this.playBlocked = false;
+    this._interruptedAt = 0;
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null;
     try { this.video.pause(); } catch { /* egal */ }
@@ -429,6 +584,14 @@ export function describeCameraError(err) {
       };
     case 'Ended':
       return { code: name, title: 'Kamera unterbrochen', message: 'Das System hat die Kamera beendet (z. B. durch einen Anruf oder eine andere App). Tippe auf „Kamera starten“.' };
+    case 'Timeout':
+      return {
+        code: name,
+        title: 'Kamera antwortet nicht',
+        message: homeScreen
+          ? 'iPadOS/iOS hat die Kamera nicht freigegeben (keine Antwort). Tippe auf „Kamera starten“. Hilft das nicht: App im App-Umschalter ganz schliessen und neu öffnen – oder die Ausweichlösung über Safari nutzen.'
+          : 'Der Browser hat die Kamera nicht freigegeben (keine Antwort). Tippe erneut auf „Kamera starten“ oder lade die Seite neu.'
+      };
     case 'NoFrames':
       return {
         code: name,

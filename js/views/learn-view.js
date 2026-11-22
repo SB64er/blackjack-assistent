@@ -1,5 +1,5 @@
 // Karten anlernen: Rangzeichen im Kamerabild antippen und Wert zuordnen.
-import { View, subHeader, cameraStatus, cameraButton, warningBanner, compatMessage } from './view-base.js';
+import { View, subHeader, cameraStatus, cameraButton, warningBanner, compatMessage, playbackButton } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { RANKS, RANK_NAMES } from '../game/hand.js';
 import { GLYPH_W, GLYPH_H } from '../recognition/vision.js';
@@ -40,6 +40,7 @@ export class LearnView extends View {
           <div class="cam-statusline" data-slot="status"></div>
           <div class="camera-stage" data-slot="stage">
             <div class="stage-placeholder" data-slot="placeholder"><strong>Kameravorschau</strong><span>Tippe auf „Kamera starten“.</span></div>
+            <div class="stage-play" data-slot="play"></div>
           </div>
         </div>
         <div class="cam-panel" data-slot="panel"></div>
@@ -55,6 +56,7 @@ export class LearnView extends View {
     const u = () => this.update();
     this.listen(camera, 'state', u);
     this.listen(camera, 'dimensions', u);
+    this.listen(camera, 'playback', u);
     this.listen(calibration, 'change', u);
     this.listen(templates, 'change', u);
     this.listen(recognition, 'status', u);
@@ -184,6 +186,9 @@ export class LearnView extends View {
       `<span class="status"><span class="dot dot--${cam.tone}"></span>${esc(cam.label)}</span>`;
     this.el.querySelector('[data-slot="placeholder"]').hidden = active;
     this.stage.classList.toggle('is-live', active);
+    const dims = camera.dimensions();
+    if (dims) this.stage.style.setProperty('--frame-aspect', `${dims.width} / ${dims.height}`);
+    this.el.querySelector('[data-slot="play"]').innerHTML = playbackButton(camera);
 
     const panel = [];
     if (!templates.consent) {

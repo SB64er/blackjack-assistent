@@ -81,8 +81,19 @@ export function warningBanner({ title, message }) {
 // Kamera-Startknopf: Start MUSS direkt im Tipp passieren (iOS).
 export function cameraButton(camera, { compact = false } = {}) {
   const cls = compact ? 'btn btn--primary btn--compact' : 'btn btn--primary';
-  if (camera.state === CameraState.STARTING) return `<button type="button" class="${cls}" disabled>Kamera startet …</button>`;
+  if (camera.state === CameraState.STARTING) {
+    // Hängt der Start (iPad-Home-Bildschirm-App), darf neu angetippt werden.
+    return camera.startingSlow
+      ? `<button type="button" class="${cls}" data-camera="retry">Start dauert lange – erneut versuchen</button>`
+      : `<button type="button" class="${cls}" disabled>Kamera startet …</button>`;
+  }
   if (camera.canResume) return `<button type="button" class="${cls}" data-camera="start">Kamera fortsetzen</button>`;
   if (camera.isRunning) return `<button type="button" class="btn btn--secondary${compact ? ' btn--compact' : ''}" data-camera="stop">Kamera stoppen</button>`;
   return `<button type="button" class="${cls}" data-camera="start">Kamera starten</button>`;
+}
+
+// Wiedergabe vom System blockiert (schwarzes Bild ohne Fehlermeldung).
+export function playbackButton(camera) {
+  if (!camera.playBlocked) return '';
+  return `<button type="button" class="tap-to-play" data-camera="play">${ICONS.camera}<span>Kamerabild anzeigen – hier tippen</span></button>`;
 }

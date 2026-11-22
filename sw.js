@@ -1,7 +1,17 @@
 // Service Worker: speichert nur die App-Dateien (HTML, CSS, JS, Icons).
 // Kamerabilder werden nie gespeichert oder übertragen.
-// Bei jeder neuen Version VERSION erhöhen, damit iPhones die Dateien aktualisieren.
-const VERSION = 'bj-assistent-v0.3.0';
+//
+// Phase 4:
+// - Bei jeder neuen Version VERSION erhöhen (muss zu js/core/version.js passen,
+//   prüft `npm test`). Alle App-Dateien werden dann frisch geladen.
+// - App-Dateien kommen aus dem Cache (schneller Start, sicher offline).
+//   Auch die Seite selbst, damit HTML und Skripte immer zur gleichen Version gehören.
+// - Eine neue Version wartet, bis der Benutzer "Aktualisieren" tippt
+//   (kein Neuladen mitten in einer Runde). Erstinstallation übernimmt sofort.
+// - Gelöscht werden nur alte Caches dieser App.
+const VERSION = 'bj-assistent-v0.4.0';
+const PREFIX = 'bj-assistent-';
+const NAV_TIMEOUT_MS = 3000;
 
 const ASSETS = [
   './',
@@ -15,6 +25,8 @@ const ASSETS = [
   './js/core/dom.js',
   './js/demo/scenarios.js',
   './js/core/version.js',
+  './js/core/display.js',
+  './js/core/updates.js',
   './js/game/hand.js',
   './js/recognition/vision.js',
   './js/recognition/analyzer.js',
@@ -41,39 +53,81 @@ const ASSETS = [
   './icons/icon-maskable-512.png'
 ];
 
+const ASSET_URLS = new Set(ASSETS.map((a) => new URL(a, self.location).href));
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(VERSION);
+    // cache: 'reload' umgeht den HTTP-Cache, damit wirklich die neue Version gespeichert wird.
+    await cache.addAll(ASSETS.map((a) => new Request(a, { cache: 'reload' })));
+    // Erstinstallation: sofort übernehmen. Update: auf Bestätigung warten.
+    if (!self.registration.active) await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== VERSION).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-// Netzwerk zuerst (damit Updates sofort ankommen), offline aus dem Cache.
+self.addEventListener('message', (event) => {
+  const type = event.data && event.data.type;
+  if (type === 'SKIP_WAITING') self.skipWaiting();
+  if (type === 'GET_VERSION' && event.source) event.source.postMessage({ type: 'VERSION', version: VERSION });
+});
+
+function timeout(ms) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+}
+
+async function fromNetworkAndStore(req, cacheKey = req) {
+  const res = await fetch(req);
+  if (res.ok && res.type === 'basic') {
+    const copy = res.clone();
+    caches.open(VERSION).then((cache) => cache.put(cacheKey, copy)).catch(() => {});
+  }
+  return res;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(VERSION).then((cache) => cache.put(req, copy));
-        }
-        return res;
-      })
-      .catch(async () => {
-        const hit = await caches.match(req);
-        if (hit) return hit;
-        if (req.mode === 'navigate') {
-          const shell = await caches.match('./index.html');
-          if (shell) return shell;
-        }
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Seite (App-Start): aus dem Cache dieser Version, damit HTML und Skripte
+  // immer zusammenpassen. Neue Versionen kommen über das Update (Hinweis in der App).
+  if (req.mode === 'navigate') {
+    event.respondWith((async () => {
+      const cache = await caches.open(VERSION);
+      const hit = (await cache.match('./index.html')) || (await cache.match('./'));
+      if (hit) return hit;
+      try {
+        return await Promise.race([fetch(req), timeout(NAV_TIMEOUT_MS * 3)]);
+      } catch {
         return Response.error();
-      })
+      }
+    })());
+    return;
+  }
+
+  // App-Dateien: aus dem Cache dieser Version (gehören zusammen).
+  const key = url.origin + url.pathname;
+  if (ASSET_URLS.has(key)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(VERSION);
+      const hit = await cache.match(key);
+      if (hit) return hit;
+      return fromNetworkAndStore(req, key);
+    })());
+    return;
+  }
+
+  // Sonstiges: Netz, offline aus dem Cache.
+  event.respondWith(
+    fetch(req).catch(async () => (await caches.match(req)) || Response.error())
   );
 });

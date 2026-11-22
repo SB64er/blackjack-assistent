@@ -1,5 +1,5 @@
 // Kamera & Kalibrierung (Phase 2).
-import { View, subHeader, cameraStatus, compatMessage, warningBanner, cameraButton } from './view-base.js';
+import { View, subHeader, cameraStatus, compatMessage, warningBanner, cameraButton, playbackButton } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { CameraState, isStandalone, isIPad } from '../camera/camera-service.js';
 import { collectDiagnostics, diagnosticsText } from '../camera/camera-diagnostics.js';
@@ -33,6 +33,7 @@ export class CameraView extends View {
           <div class="cam-statusline" data-slot="status"></div>
           <div class="camera-stage" data-slot="stage">
             <div class="stage-placeholder" data-slot="placeholder"></div>
+            <div class="stage-play" data-slot="play"></div>
           </div>
         </div>
         <div class="cam-panel">
@@ -68,6 +69,7 @@ export class CameraView extends View {
     this.listen(camera, 'state', () => this.update());
     this.listen(camera, 'dimensions', () => this.update());
     this.listen(camera, 'info', () => this.update());
+    this.listen(camera, 'playback', () => this.update());
     this.listen(calibration, 'change', () => this.update());
     this.update();
   }
@@ -86,7 +88,7 @@ export class CameraView extends View {
   }
 
   async _refreshDiagnostics() {
-    const rows = await collectDiagnostics(this.ctx.camera);
+    const rows = await collectDiagnostics(this.ctx.camera, this.ctx);
     rows.push(['Erkennung', this.ctx.recognition.scanning ? `aktiv · ${this.ctx.recognition.tickMs} ms pro Auswertung` : 'aus']);
     this._diagRows = rows;
     this.el.querySelector('[data-slot="diag-body"]').innerHTML =
@@ -198,6 +200,9 @@ export class CameraView extends View {
       ? '<strong>Kamera aus</strong><span>Gespeicherte Bereiche werden angezeigt.</span>'
       : `<strong>Kameravorschau</strong><span>${camera.state === CameraState.STARTING ? 'Kamera startet …' : 'Tippe auf „Kamera starten“.'}</span>`;
     this.stage.classList.toggle('is-live', active);
+    const frame = this._frameSize();
+    if (frame) this.stage.style.setProperty('--frame-aspect', `${frame.width} / ${frame.height}`);
+    this.el.querySelector('[data-slot="play"]').innerHTML = playbackButton(camera);
 
     // --- Overlay
     let regions = calibration.visibleRegions();
@@ -246,7 +251,10 @@ export class CameraView extends View {
   _controlsHtml({ active, editing, dims }) {
     const { camera, calibration } = this.ctx;
     const saved = calibration.saved;
-    const camBtn = cameraButton(camera);
+    const camBtn = cameraButton(camera) +
+      (camera.state === CameraState.ACTIVE || camera.state === CameraState.INTERRUPTED
+        ? '<button type="button" class="btn btn--ghost" data-camera="restart">Kamera neu starten</button>'
+        : '');
 
     const resetBtn = saved
       ? `<button type="button" class="btn ${this._confirmReset ? 'btn--danger' : 'btn--ghost'}" data-action="reset">

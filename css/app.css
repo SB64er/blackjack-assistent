@@ -1,4 +1,4 @@
-/* Blackjack Assistent – dunkles, minimalistisches Design (Phase 1 + 2) */
+/* Blackjack Assistent – dunkles, minimalistisches Design (Phase 1–4) */
 
 :root {
   --bg: #0B0D10;
@@ -517,3 +517,177 @@ svg { flex-shrink: 0; }
 .tile-region { position: absolute; top: 4px; right: 6px; font-size: 10px; color: var(--muted); }
 .tile--ok { border: 1.5px solid var(--ok); background: rgba(52,211,153,.1); }
 .tile--unsure { border: 1.5px solid var(--warn); background: rgba(250,204,21,.08); }
+
+/* ================= Phase 4: iPad, Vollbild, Touch ================= */
+
+/* ---------- Touch-Bedienung ---------- */
+html { touch-action: manipulation; }          /* kein Doppeltipp-Zoom, keine Tipp-Verzögerung */
+button, .btn, .row, .chip, .tile, .rank-btn, .rank-chip, .icon-btn, .segmented, .switch,
+.link-row, .pill-btn, .warn-strip, .subbar, .topbar, .kicker, .card, .region, .det, .update-bar {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.camera-video, .camera-stage, .mini-cam { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.diag-list, .diag-list * { -webkit-user-select: text; user-select: text; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--stand); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+
+/* Sichtbare Rückmeldung beim Antippen */
+.segmented button:active, .chip:active, .tile:active, .link-row:active, .pill-btn:active,
+.warn-strip:active, .rank-chip:active, .tap-to-play:active { opacity: .75; }
+.switch:active span { transform: scale(.92); }
+.switch span { transition: transform .1s ease; }
+.row--btn:disabled { opacity: .55; }
+
+/* Grössere Griffe bei Fingerbedienung (Kalibrierung) */
+@media (pointer: coarse) {
+  .handle { width: 48px; height: 48px; }
+  .handle::after { width: 20px; height: 20px; }
+  .handle-nw { left: -38px; top: -38px; }
+  .handle-nw::after { left: 28px; top: 28px; }
+  .handle-ne { right: -38px; top: -38px; }
+  .handle-ne::after { right: 28px; top: 28px; }
+  .handle-sw { left: -38px; bottom: -38px; }
+  .handle-sw::after { left: 28px; bottom: 28px; }
+  .handle-se { right: -38px; bottom: -38px; }
+  .handle-se::after { right: 28px; bottom: 28px; }
+  .chip { min-height: 48px; }
+}
+
+.topbar-actions [data-slot="fs"] { display: contents; }
+.text-ok { color: var(--ok); }
+
+/* ---------- Kamera: Bildfläche im Seitenverhältnis des Kamerabilds ---------- */
+.camera-stage { height: auto; aspect-ratio: var(--frame-aspect, 4 / 3); max-height: 62dvh; }
+@media (orientation: landscape) and (min-width: 640px) {
+  .camera-stage { aspect-ratio: auto; max-height: none; }
+}
+
+/* Wiedergabe blockiert: grosser Tipp-Knopf mitten im Bild */
+.stage-play {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.stage-play:empty { display: none; }
+.tap-to-play {
+  pointer-events: auto; min-height: 56px; padding: 0 20px; border-radius: 28px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700;
+  background: var(--text); color: var(--bg); border: 0; box-shadow: 0 6px 24px rgba(0,0,0,.6);
+}
+
+/* ---------- Update-Hinweis ---------- */
+.update-bar {
+  position: fixed; z-index: 70; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--safe-bottom) + 12px); width: min(640px, calc(100% - 24px - var(--safe-left) - var(--safe-right)));
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 12px 12px 16px; border-radius: 18px;
+  background: #12151A; border: 1px solid rgba(52,211,153,.5); box-shadow: 0 10px 30px rgba(0,0,0,.6);
+}
+.update-bar-text { display: flex; align-items: center; gap: 10px; font-size: 14px; line-height: 1.4; color: var(--text-2); flex: 1 1 260px; }
+.update-bar-text b { color: var(--text); }
+.update-bar-text svg { color: var(--ok); }
+.update-bar-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.update-bar-actions .btn { width: auto; }
+
+/* ---------- Home-Bildschirm-App / Vollbild ---------- */
+/* Ohne Browserleisten liegt der Inhalt unter der Statusleiste: Abstand sichern,
+   auch wenn iPadOS (z. B. bei Stage Manager) keinen safe-area-Wert liefert. */
+html.is-standalone .screen { padding-top: calc(max(var(--safe-top), 20px) + 10px); }
+html.is-fullscreen .screen { padding-top: calc(var(--safe-top) + 16px); }
+html.is-standalone, html.is-standalone body { background: var(--bg); }
+
+/* ---------- iPad (beide Ausrichtungen) ---------- */
+@media (min-width: 760px) {
+  .icon-btn { width: 48px; height: 48px; }
+  .topbar { margin-bottom: 18px; }
+  .app-title { font-size: 19px; }
+  .segmented button { min-height: 48px; font-size: 16px; }
+  .btn { min-height: 56px; }
+  .btn--primary { min-height: 60px; font-size: 19px; }
+  .btn--ghost, .btn--danger { min-height: 48px; }
+  .btn--compact { min-height: 48px; }
+  .row { min-height: 58px; font-size: 17px; }
+
+  /* Hände als Flächen – ruhiger und leichter zu erfassen */
+  .screen-main .hand {
+    align-items: center; padding: 16px 20px; border-radius: 22px;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .screen-main .card {
+    width: auto; height: clamp(120px, 15dvh, 176px); aspect-ratio: 5 / 7;
+    padding: 10px 12px; border-radius: 12px;
+  }
+  .screen-main .card-rank { font-size: clamp(26px, 3.2dvh, 40px); }
+  .screen-main .card-suit { font-size: clamp(40px, 4.8dvh, 60px); }
+  .screen-main .card-rank-big { font-size: clamp(44px, 5.6dvh, 70px); }
+  .screen-main .card--unsure { font-size: clamp(36px, 4.6dvh, 56px); }
+  .hand-value-num { font-size: clamp(52px, 6.4dvh, 76px); }
+  .hand-value-num--sm { font-size: clamp(34px, 4dvh, 48px); }
+  .hand-value-label { font-size: 13px; }
+  .kicker { font-size: 13px; }
+  .rec-kicker { font-size: 13px; }
+  .rec-idle-title { font-size: 36px; }
+  .rec-hand { font-size: 20px; }
+  .rec-note { font-size: 15px; }
+  .rec-actions { max-width: 380px; }
+  .pill-btn { min-height: 48px; font-size: 15px; }
+  .toast, .warn-strip { min-height: 48px; font-size: 15px; }
+
+  .screen-sub { max-width: 760px; }
+  .subbar-title { font-size: 28px; }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
+  .rank-chip { min-height: 46px; }
+  .rank-btn { min-height: 64px; font-size: 22px; }
+}
+
+/* ---------- iPad Querformat: Karten links, Empfehlung rechts ---------- */
+@media (min-width: 760px) and (orientation: landscape) {
+  .screen-main { padding-left: calc(var(--safe-left) + 28px); padding-right: calc(var(--safe-right) + 28px); }
+  .main-grid {
+    gap: 18px 28px;
+    grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "dealer rec" "player rec" ". rec" "footer rec";
+  }
+  .main-footer { flex-direction: column; flex-wrap: nowrap; }
+  .main-footer .segmented { width: auto; }
+  .main-footer .btn--primary, .main-footer .waiting { flex: none; width: 100%; }
+  .main-footer .btn--ghost { flex-basis: auto; }
+  .rec { border-radius: 28px; }
+  .rec-word { font-size: clamp(64px, 9.5vw, 150px); }
+  .rec-word[data-len="8"] { font-size: clamp(52px, 7.4vw, 122px); }
+  .rec-word[data-len="10"] { font-size: clamp(44px, 6.2vw, 100px); }
+
+  .screen-camera .cam-layout { grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr); }
+}
+
+/* ---------- iPad Hochformat: alles untereinander, Bedienung zweispaltig ---------- */
+@media (min-width: 760px) and (orientation: portrait) {
+  .screen-main { padding-left: calc(var(--safe-left) + 28px); padding-right: calc(var(--safe-right) + 28px); }
+  .main-grid { gap: 18px; grid-template-rows: auto minmax(260px, 1fr) auto auto; }
+  .main-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .main-footer > .btn--ghost { grid-column: 1 / -1; }
+  .main-footer .segmented { align-self: stretch; }
+  .main-footer .segmented button { min-height: 52px; }
+  .rec-word { font-size: clamp(72px, 16vw, 170px); }
+  .rec-word[data-len="8"] { font-size: clamp(56px, 12.5vw, 140px); }
+  .rec-word[data-len="10"] { font-size: clamp(46px, 10.4vw, 118px); }
+
+  .camera-stage { max-height: 58dvh; }
+}
+
+/* ---------- Niedrige Bildschirme (iPhone quer, iPad Split View) ---------- */
+@media (max-height: 560px) {
+  .screen-main { height: auto; min-height: 100dvh; }
+  .screen-main .card { height: 84px; padding: 6px 8px; }
+  .screen-main .card-rank { font-size: 18px; }
+  .screen-main .card-suit { font-size: 26px; }
+  .hand-value-num { font-size: 36px; }
+  .main-grid { grid-template-rows: auto auto auto auto; }
+}
+
+/* Kamera-Ansichten nutzen die volle Breite (überschreibt .screen-sub oben) */
+.screen-sub.screen-camera { max-width: none; }
+@media (min-width: 760px) and (orientation: portrait) {
+  .screen-sub.screen-camera { max-width: 900px; }
+}

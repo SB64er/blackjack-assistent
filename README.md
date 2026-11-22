@@ -1,4 +1,4 @@
-# Blackjack Assistent – PWA (Phase 1–3)
+# Blackjack Assistent – PWA (Phase 1–4, Version 0.4.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
 Alle Daten (Einstellungen, Kalibrierung) bleiben lokal auf dem Gerät.
@@ -12,7 +12,8 @@ sw.js                    Service Worker (offline; speichert nur App-Dateien)
 icons/                   App-Symbole (180, 192, 512, maskable)
 css/app.css              Design (dunkel, minimalistisch)
 js/app.js                Einstieg + Navigation OHNE URL-Änderung (data-nav), Kamera-Start per Tipp
-js/core/                 Speicher, Ereignisse, Einstellungen, DOM-Hilfen
+js/core/                 Speicher, Ereignisse, Einstellungen, DOM-Hilfen,
+                         display (Home-Bildschirm-App, Vollbild), updates (Service Worker, Update-Hinweis)
 js/camera/               CameraService – getUserMedia (Stufen-Fallback), Start/Stopp, Fehler,
                          Frame-Wächter mit Selbstreparatur, Fortsetzen, Dock, Wake-Lock;
                          camera-diagnostics – Diagnose zum Kopieren
@@ -26,6 +27,8 @@ js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich)
                          template-store (angelernte Muster + Zustimmung),
                          round-tracker (Glättung, neue Runde, gezogene Karte),
                          recognition-service (Live-Auswertung), detection-overlay
+tests/                   Logik-Tests (npm test) und Browser-Test (npm run test:browser)
+package.json             nur für die Tests – die App selbst braucht keinen Build
 ```
 
 ## Kalibrierungsdaten
@@ -53,8 +56,21 @@ wird sie pausiert (gelbe Warnung), aber nie verändert.
 
 ## Neue Version veröffentlichen
 
-Nach Änderungen in `sw.js` die Konstante `VERSION` erhöhen, damit installierte Apps
-die neuen Dateien laden.
+Bei **jeder** Änderung an App-Dateien die Version an drei Stellen gleich erhöhen:
+`VERSION` in `sw.js`, `APP_VERSION` in `js/core/version.js` und `version` in `package.json`.
+Neue Dateien in `ASSETS` (sw.js) eintragen. `npm test` prüft beides.
+
+Seit Phase 4 kommen die App-Dateien aus dem Offline-Speicher. Installierte Apps sehen
+eine neue Version als Hinweis „Neue Version verfügbar“ und laden sie erst nach Tipp auf
+„Aktualisieren“ – nie mitten in einer Runde. Kalibrierung, Einstellungen und angelernte
+Karten bleiben dabei erhalten.
+
+## Tests
+
+```
+npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offline-Dateiliste
+npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright)
+```
 
 ## Voraussetzungen
 
@@ -81,3 +97,29 @@ Angelernte Muster: `localStorage` → `bjassist.templates` (nur nach Zustimmung;
 - Kamerafreigabe gilt nur bis zum Schliessen der App (WebKit-Bug 327237) – Start per Tipp.
 - Video kann schwarz bleiben (WebKit-Bugs 252465/300115) – Wächter repariert oder meldet es.
 - iPadOS 26.0 drehte das Kamerabild falsch (WebKit-Bug 299591, behoben in 26.1).
+
+## Phase 4 (Version 0.4.0)
+
+**Kamera (iPad-Web-App):** Bisher konnte der Start in der Home-Bildschirm-App ohne
+Fehlermeldung hängen bleiben („Kamera startet …“) oder das Bild blieb schwarz.
+- Zeitlimit für die Kamerafreigabe (10 s) – danach klare Meldung „Kamera antwortet nicht“.
+- Nach 3,5 s kann der Start per Tipp erneut versucht werden.
+- Blockiert iOS die Wiedergabe, erscheint „Kamerabild anzeigen – hier tippen“.
+- Selbstreparatur bei komplett schwarzem Bild und bei dauerhaft „unterbrochener“ Kamera.
+- Knopf „Kamera neu starten“, erweiterte Diagnose (Wiedergabe, Startdauer, Reparaturen,
+  Helligkeit, Anzeige, Offline-Version).
+
+**iPad-Layout:** Querformat mit Karten links und Empfehlung rechts, Hochformat mit grösseren
+Karten und zweispaltiger Bedienung; Kamerabild im echten Seitenverhältnis.
+
+**Vollbild & Home-Bildschirm:** Vollbild-Knopf im Browser (iPad-Safari), Abstand zur
+Statusleiste in der Home-Bildschirm-App, Installationshinweis in den Einstellungen.
+
+**Touch:** Kein Doppeltipp-Zoom, keine Textauswahl/Kontextmenüs auf Bedienelementen,
+sichtbare Rückmeldung beim Tippen, grössere Ziele und Kalibrierungsgriffe.
+
+**Service Worker:** Offline-Start aus dem Cache, Update-Hinweis mit „Aktualisieren“,
+Update-Suche beim Öffnen und alle 30 Minuten, nur eigene alte Caches werden gelöscht.
+
+Gespeicherte Daten (`bjassist.settings`, `bjassist.calibration`, `bjassist.templates`,
+`bjassist.testmode`) sind unverändert – nichts muss neu eingerichtet werden.
