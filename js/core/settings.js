@@ -8,6 +8,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   demo: true,                  // Demo-Modus mit simulierten Karten
   rules: {
     decks: 6,
+    // 0.8.0: Deckanzahl "Unbekannt". Dann rechnet die App mit dem dokumentierten
+    // Standardprofil (6 Decks) und kennzeichnet das als Annahme.
+    decksUnknown: false,
     soft17: 'steht',           // 'steht' | 'zieht'
     das: true,                 // Verdoppeln nach Split
     // surrender (Aufgeben) gibt es ab 0.6.0 nicht mehr; ein alter Wert bleibt

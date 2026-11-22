@@ -9,7 +9,7 @@
 // - Eine neue Version wartet, bis der Benutzer "Aktualisieren" tippt
 //   (kein Neuladen mitten in einer Runde). Erstinstallation übernimmt sofort.
 // - Gelöscht werden nur alte Caches dieser App.
-const VERSION = 'bj-assistent-v0.7.0';
+const VERSION = 'bj-assistent-v0.8.0';
 const PREFIX = 'bj-assistent-';
 const NAV_TIMEOUT_MS = 3000;
 
@@ -46,6 +46,15 @@ const ASSETS = [
   './js/views/lab-view.js',
   './js/views/risk-view.js',
   './js/views/chat-view.js',
+  './js/views/academy-view.js',
+  './js/academy/youtube.js',
+  './js/academy/extract.js',
+  './js/academy/verify.js',
+  './js/academy/server-client.js',
+  './js/academy/academy-store.js',
+  './js/archive/insights.js',
+  './js/strategy/exact.js',
+  './js/strategy/table-rules.js',
   './js/core/idb.js',
   './js/game/card-tracker.js',
   './js/game/round-state.js',

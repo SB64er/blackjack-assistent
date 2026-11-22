@@ -61,7 +61,9 @@ export class Simulation {
     this.s = {
       wins: 0, losses: 0, pushes: 0, hands: 0, blackjacks: 0, doubles: 0, splits: 0, busts: 0,
       wagered: 0, cum: 0, peak: 0, maxDrawdown: 0, lossStreak: 0, longestLossStreak: 0,
-      winStreak: 0, longestWinStreak: 0, worst: 0, best: 0
+      winStreak: 0, longestWinStreak: 0, worst: 0, best: 0,
+      // 0.8.0: Verteilungen (Ergebnis je Runde, Ergebnis je Block von SESSION_SIZE Runden)
+      dist: new Map(), block: 0, sessions: []
     };
     this._shuffle();
   }
@@ -170,6 +172,10 @@ export class Simulation {
       if (s.peak - s.cum > s.maxDrawdown) s.maxDrawdown = s.peak - s.cum;
       if (r < s.worst) s.worst = r;
       if (r > s.best) s.best = r;
+      const dk = Math.round(r * 2) / 2;
+      s.dist.set(dk, (s.dist.get(dk) || 0) + 1);
+      s.block += r;
+      if (this.rounds % SESSION_SIZE === 0) { if (s.sessions.length < MAX_SESSIONS) s.sessions.push(s.block); s.block = 0; }
       if (this.record) this.log.push({ net: r, wagered: rd.wagered, player: rd.hands.map((h) => ({ cards: h.cards.map((c) => c.rank), bet: h.bet, net: h.net, actions: h.actions })), dealer: rd.dealer.map((c) => c.rank) });
     }
     return this.result();
@@ -212,9 +218,26 @@ export class Simulation {
       expectedLongestLossStreak: n && this.s.losses ? expectedLongestRun(n, this.s.losses / n) : 0,
       maxDrawdown: this.s.maxDrawdown,
       worstRound: this.s.worst,
-      bestRound: this.s.best
+      bestRound: this.s.best,
+      // 0.8.0: Gewinn-/Verlustverteilung (Simulationswerte, keine Vorhersage)
+      distribution: [...this.s.dist.entries()].sort((a, b) => a[0] - b[0]).map(([net, count]) => ({ net, count, share: n ? count / n : 0 })),
+      sessions: sessionStats(this.s.sessions)
     };
   }
+}
+
+export const SESSION_SIZE = 100;
+const MAX_SESSIONS = 20000;
+
+/** Kennzahlen der Ergebnisse je Block von SESSION_SIZE Runden ("Sitzungen"). */
+export function sessionStats(list) {
+  const n = list.length;
+  if (!n) return { size: SESSION_SIZE, n: 0 };
+  const sorted = [...list].sort((a, b) => a - b);
+  const q = (p) => sorted[Math.min(n - 1, Math.max(0, Math.round(p * (n - 1))))];
+  const mean = list.reduce((a, b) => a + b, 0) / n;
+  const sd = n > 1 ? Math.sqrt(list.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1)) : 0;
+  return { size: SESSION_SIZE, n, mean, sd, min: sorted[0], p05: q(0.05), p50: q(0.5), p95: q(0.95), max: sorted[n - 1], lossShare: list.filter((x) => x < 0).length / n, winShare: list.filter((x) => x > 0).length / n };
 }
 
 /** Erwartete Länge der längsten Serie bei n unabhängigen Runden mit Wahrscheinlichkeit q (Näherung). */

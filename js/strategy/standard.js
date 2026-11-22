@@ -49,27 +49,40 @@ export const ROWS = {
 
 export const DEFAULT_RULES = Object.freeze({ decks: 6, soft17: 'steht', das: true, payout: '3:2' });
 
+// 0.8.0: Deckanzahl "Unbekannt". Gerechnet wird dann mit diesem dokumentierten
+// Standardprofil; die App kennzeichnet das immer als Annahme (nie als erkannt).
+export const UNKNOWN_DECK_PROFILE = 6;
+
 export function normalizeRules(r) {
   const d = DEFAULT_RULES;
   const x = r || {};
+  const unknown = x.decksUnknown === true;
   return {
-    decks: [1, 2, 4, 6, 8].includes(x.decks) ? x.decks : d.decks,
+    decks: unknown ? UNKNOWN_DECK_PROFILE : ([1, 2, 4, 6, 8].includes(x.decks) ? x.decks : d.decks),
     soft17: x.soft17 === 'zieht' ? 'zieht' : 'steht',
     das: typeof x.das === 'boolean' ? x.das : d.das,
     // "surrender" aus alten Daten wird ignoriert (Aufgeben gibt es nicht mehr).
-    payout: x.payout === '6:5' ? '6:5' : '3:2'
+    payout: x.payout === '6:5' ? '6:5' : '3:2',
+    // Nur vorhanden, wenn die Deckanzahl unbekannt ist (alte Daten bleiben unverändert).
+    ...(unknown ? { decksUnknown: true } : {})
   };
 }
 
 export function rulesEqual(a, b) {
   const x = normalizeRules(a);
   const y = normalizeRules(b);
-  return Object.keys(x).every((k) => x[k] === y[k]);
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])].every((k) => x[k] === y[k]);
+}
+
+export function decksText(r) {
+  const x = normalizeRules(r);
+  if (x.decksUnknown) return `Decks unbekannt (Annahme ${UNKNOWN_DECK_PROFILE})`;
+  return `${x.decks} ${x.decks === 1 ? 'Deck' : 'Decks'}`;
 }
 
 export function rulesText(r) {
   const x = normalizeRules(r);
-  return `${x.decks} ${x.decks === 1 ? 'Deck' : 'Decks'} · ${x.soft17 === 'zieht' ? 'H17' : 'S17'} · ${x.das ? 'DAS' : 'kein DAS'} · BJ ${x.payout}`;
+  return `${decksText(x)} · ${x.soft17 === 'zieht' ? 'H17' : 'S17'} · ${x.das ? 'DAS' : 'kein DAS'} · BJ ${x.payout}`;
 }
 
 const between = (u, lo, hi) => u >= lo && u <= hi;

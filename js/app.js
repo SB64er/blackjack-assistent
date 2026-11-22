@@ -33,6 +33,8 @@ import { SimulationStore } from './yumeko/sim-store.js';
 import { LabView } from './views/lab-view.js';
 import { RiskView } from './views/risk-view.js';
 import { ChatView } from './views/chat-view.js';
+import { AcademyStore } from './academy/academy-store.js';
+import { AcademyView } from './views/academy-view.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -58,6 +60,8 @@ const yumeko = new Yumeko({ archive, knowledge, profiles, settings });
 // Echtgeld & Risiko (optional) und Simulationen – getrennt von echten Runden gespeichert.
 const bankroll = new BankrollStore({ db });
 const simulations = new SimulationStore({ db });
+// Yumeko Academy (0.8.0): YouTube-Lernsystem und Wissensdatenbank – lokal in IndexedDB.
+const academy = new AcademyStore({ db, knowledge, settings });
 
 // Empfehlung des aktiven Profils für die Rundenprotokolle.
 recognition.advise = (cards, up, afterSplit) => {
@@ -76,12 +80,14 @@ recognition.on('round-end', ({ round }) => {
     rules: settings.get('rules'),
     profile: { id: p.id, name: p.name, type: p.type, ...(p.type === 'yumeko' ? { version: p.data.strategyVersion || 0 } : {}) }
   });
+  // 0.8.0: Wurde in dieser Runde eine Fehlerkennung gemeldet, wird die Runde markiert.
+  if (academy.feedback.some((f) => f.roundId === record.id)) record.recognition = { ...(record.recognition || {}), reported: true };
   archive.add(record).then((saved) => {
     if (saved.status === 'incomplete') ui.set('pendingRound', saved.id);
   }).catch((err) => console.warn('[archiv] Runde nicht gespeichert', err));
 });
 
-const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, knowledge, yumeko, bankroll, simulations };
+const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, knowledge, yumeko, bankroll, simulations, academy };
 
 const ROUTES = {
   haupt: MainView,
@@ -98,7 +104,8 @@ const ROUTES = {
   video: VideoView,
   labor: LabView,
   risiko: RiskView,
-  chat: ChatView
+  chat: ChatView,
+  akademie: AcademyView
 };
 
 const root = document.getElementById('app');

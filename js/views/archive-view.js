@@ -1,6 +1,7 @@
 // Spielarchiv (Phase 6): alle Runden anzeigen, suchen, filtern, öffnen,
 // exportieren/importieren und – nur nach ausdrücklicher Bestätigung – löschen.
 import { View, subHeader } from './view-base.js';
+import { roundInsight } from '../archive/insights.js';
 import { ICONS, esc } from '../core/dom.js';
 import { filterRounds, summarizeRounds, roundOutcome, STATUS_TEXT } from '../archive/round-record.js';
 import { OUTCOME_LABEL } from '../game/settle.js';
@@ -63,7 +64,9 @@ export class ArchiveView extends View {
       if (data.yumeko) extra = await this.ctx.knowledge.importData(data.yumeko);
       if (data.bankroll && this.ctx.bankroll) money = await this.ctx.bankroll.importData(data.bankroll);
       if (data.simulations && this.ctx.simulations) sims = await this.ctx.simulations.importData(data.simulations);
-      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${extra ? `, ${extra} YUMEKO-Einträge` : ''}${money ? `, ${money} Echtgeld-Einträge` : ''}${sims ? `, ${sims} Simulationen` : ''}.` };
+      let acad = null;
+      if (data.academy && this.ctx.academy) acad = await this.ctx.academy.importData(data.academy);
+      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${extra ? `, ${extra} YUMEKO-Einträge` : ''}${money ? `, ${money} Echtgeld-Einträge` : ''}${sims ? `, ${sims} Simulationen` : ''}${acad && acad.added ? `, ${acad.added} Academy-Einträge` : ''}.` };
     } catch (err) {
       this._notice = { tone: 'warn', text: `Import fehlgeschlagen: ${err.message}` };
     }
@@ -83,10 +86,11 @@ export class ArchiveView extends View {
         const data = await archive.exportData({
           yumeko: knowledge.exportData(),
           ...(this.ctx.bankroll ? { bankroll: this.ctx.bankroll.exportData() } : {}),
-          ...(this.ctx.simulations ? { simulations: this.ctx.simulations.exportData() } : {})
+          ...(this.ctx.simulations ? { simulations: this.ctx.simulations.exportData() } : {}),
+          ...(this.ctx.academy ? { academy: this.ctx.academy.exportData() } : {})
         });
         downloadJson(`bjai-sicherung-${new Date().toISOString().slice(0, 10)}.json`, data);
-        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden, YUMEKO-Wissen, Echtgeld-Protokoll und Simulationen erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“) – sie enthält Geldbeträge.` };
+        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen und Academy erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“) – sie enthält Geldbeträge.` };
         this.render();
         break;
       }
@@ -163,7 +167,7 @@ export class ArchiveView extends View {
           <span class="round-row-main">
             <span class="round-row-date">${esc(fmtDateTime(r.startedAt))}</span>
             <span class="round-row-cards">Dealer ${esc(ranks(r.dealer.cards))}${r.dealer.total != null ? ` (${r.dealer.total})` : ''} · ${r.hands.map((h, i) => `${r.hands.length > 1 ? `H${i + 1} ` : ''}${esc(ranks(h.cards))}${h.total != null ? ` (${h.total})` : ''}`).join(' · ')}</span>
-            <span class="round-row-meta">${esc(r.profile ? r.profile.name : '–')} · ${esc(STATUS_TEXT[r.status])}</span>
+            <span class="round-row-meta">${esc(r.profile ? r.profile.name : '–')} · ${esc(STATUS_TEXT[r.status])}${(() => { const ins = roundInsight(r); return `${ins.deviations ? ` · ${ins.deviations} Abweichung${ins.deviations === 1 ? '' : 'en'}` : ''}${ins.reported ? ' · Erkennung gemeldet' : ''}${r.rules.decksUnknown ? ' · Decks unbekannt' : ''}`; })()}</span>
           </span>
           <span class="outcome-chip outcome-chip--${out}">${esc(OUT_TEXT[out])}</span>
         </button>`;

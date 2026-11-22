@@ -1,6 +1,7 @@
 // Einzelne archivierte Runde: Details ansehen, Karten/Aktionen/Ergebnis korrigieren,
 // Einsatz erfassen, löschen. Jede Korrektur wird protokolliert.
 import { View, subHeader } from './view-base.js';
+import { roundInsight, roundDecisions } from '../archive/insights.js';
 import { ICONS, esc } from '../core/dom.js';
 import { RANKS } from '../game/hand.js';
 import { OUTCOME_LABEL } from '../game/settle.js';
@@ -119,6 +120,15 @@ export class RoundView extends View {
     }
   }
 
+  // 0.8.0: Quelle, Deckangabe, Strategieabweichungen, unsichere Karten, gemeldete Erkennung.
+  _insightHtml(rec) {
+    const ins = roundInsight(rec);
+    const ds = roundDecisions(rec).filter((d) => d.deviatesFromAdvice || d.mathMistake);
+    return `
+      <p class="meta">Quelle: ${esc(ins.source)} · ${esc(ins.decks)} · ${ins.decisions} Entscheidungen, ${ins.deviations} Abweichung${ins.deviations === 1 ? '' : 'en'} von der Empfehlung${ins.uncertain ? ` · ${ins.uncertain} unsicher erkannte Karte${ins.uncertain === 1 ? '' : 'n'}` : ''}${ins.reported ? ' · <span class="text-warn">Erkennung als fehlerhaft gemeldet</span>' : ''}</p>
+      ${ds.length ? `<ul class="plain-list">${ds.map((d) => `<li>${esc(d.situation || d.cardsBefore.join(' '))}: ${esc(ACTION_TEXT[d.action])}${d.recommended ? `, empfohlen ${esc(ACTION_TEXT[d.recommended] || d.recommended)}` : ''}${d.best ? `, Rechenmodell ${esc(ACTION_TEXT[d.best])}` : ''}${d.mathMistake ? ` (−${(d.loss * 100).toFixed(1).replace('.', ',')} % des Einsatzes)` : ''}</li>`).join('')}</ul>` : ''}`;
+  }
+
   render() {
     const rec = this.round;
     const content = this.el.querySelector('[data-slot="content"]');
@@ -164,6 +174,7 @@ export class RoundView extends View {
       <p class="lead">${esc(fmtDateTime(rec.startedAt))} · <span class="status-chip status-chip--${rec.status}">${esc(STATUS_TEXT[rec.status])}</span></p>
       <p class="meta">${esc(rec.profile ? `Profil: ${rec.profile.name}${rec.profile.version ? ` (v${rec.profile.version})` : ''}` : 'Profil unbekannt')} · ${esc(rulesText(rec.rules))}</p>
       <p class="meta">Erkennung: ${rc && rc.minScore != null ? `geringste Sicherheit ${Math.round(rc.minScore * 100)} %` : '–'}${rc && rc.frames ? ` · ${rc.unsureFrames} von ${rc.frames} Auswertungen unsicher` : ''} · ${rec.confirmation === 'manual' ? 'manuell bestätigt' : 'automatisch erkannt'}</p>
+      ${this._insightHtml(rec)}
       ${rec.money ? `<p class="meta">Echtgeld: Saldo vor der Runde ${rec.money.balanceBefore ?? '–'} → nach der Runde ${rec.money.balanceAfter ?? '–'} ${esc(rec.money.currency)}</p>` : ''}
       <section class="group">
         <h2 class="group-title">DEALER · ${rec.dealer.total ?? '–'}${rec.dealer.final ? ' (Endstand)' : ''}</h2>

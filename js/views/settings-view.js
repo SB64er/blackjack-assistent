@@ -3,6 +3,7 @@ import { View, subHeader, cameraStatus } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { APP_VERSION } from '../core/version.js';
 import { RecognitionReason } from '../recognition/recognition-service.js';
+import { DECK_CHOICES, deckChoice, deckChoicePatch, deckChoiceText, ruleKnowledge } from '../strategy/table-rules.js';
 
 const BLOCKER_TEXT = {
   [RecognitionReason.CAMERA]: 'Kamera aus',
@@ -35,6 +36,7 @@ export class SettingsView extends View {
     this.listen(this.ctx.updates, 'change', () => this.render());
     this.listen(this.ctx.profiles, 'change', () => this.render());
     if (this.ctx.archive) this.listen(this.ctx.archive, 'change', () => this.render());
+    if (this.ctx.academy) this.listen(this.ctx.academy, 'change', () => this.render());
     this.listen(this.ctx.display, 'change', () => this.render());
     this.render();
   }
@@ -75,6 +77,11 @@ export class SettingsView extends View {
         this._confirmRevoke = false;
         this.ctx.templates.revokeConsent();
       }
+    } else if (a === 'decks') {
+      // 0.8.0: Deckanzahl inkl. „Unbekannt“; die letzte Auswahl bleibt lokal gespeichert.
+      const patch = deckChoicePatch(btn.dataset.value === 'unbekannt' ? 'unbekannt' : Number(btn.dataset.value));
+      settings.set('rules.decksUnknown', patch.decksUnknown);
+      settings.set('rules.decks', patch.decks);
     } else if (a.startsWith('rule:')) {
       const rule = RULES.find((r) => r.path === a.slice(5));
       const cur = settings.get(rule.path);
@@ -206,6 +213,10 @@ export class SettingsView extends View {
               <span class="row-stack"><span>◆ Lernzentrum</span><small>Lernstatus, Archiv analysieren, Video lernen, Wissen, Strategieversionen</small></span>
               <span class="row-value">${this.ctx.profiles.activeId === 'yumeko' ? '<span class="type-badge type-badge--yumeko">aktiv</span>' : ''} ${ICONS.chevron}</span>
             </button>
+            <button type="button" class="row row--link" data-nav="akademie">
+              <span class="row-stack"><span>◆ Yumeko Academy</span><small>YouTube-Links analysieren, Wissensbibliothek, Lernstatistik, Strategie-Engine</small></span>
+              <span class="row-value">${this.ctx.academy ? esc(this.ctx.academy.sources.length) : 0} Videos ${ICONS.chevron}</span>
+            </button>
           </div>
         </section>
 
@@ -222,8 +233,15 @@ export class SettingsView extends View {
 
         <section class="group">
           <h2 class="group-title">TISCHREGELN</h2>
+          <p class="group-help" id="decks-label">Anzahl Decks</p>
+          <div class="segmented segmented--decks" role="group" aria-labelledby="decks-label">
+            ${DECK_CHOICES.map((c) => `<button type="button" data-action="decks" data-value="${c}" aria-pressed="${deckChoice(settings.get('rules')) === c}">${esc(c === 'unbekannt' ? 'Unbekannt' : String(c))}</button>`).join('')}
+          </div>
+          ${deckChoice(settings.get('rules')) === 'unbekannt'
+            ? `<p class="notice notice--info" role="status">${ICONS.warning}<span>${esc(ruleKnowledge(settings.get('rules')).assumptions[0])} Empfehlungen, Rechenmodell und Simulationen kennzeichnen das als Annahme.</span></p>`
+            : `<p class="group-help">Ausgewählt: ${esc(deckChoiceText(deckChoice(settings.get('rules'))))}. Wird gespeichert und beim nächsten Start wieder verwendet.</p>`}
           <div class="list">
-            ${RULES.map((r) => `
+            ${RULES.filter((r) => r.path !== 'rules.decks').map((r) => `
               <button type="button" class="row row--btn" data-action="rule:${r.path}">
                 <span>${esc(r.label)}</span>
                 <span class="row-value">${esc(r.text(settings.get(r.path)))} ${ICONS.chevron}</span>

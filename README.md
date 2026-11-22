@@ -1,7 +1,9 @@
-# Blackjack Assistent – PWA (Phase 1–7, Version 0.7.0)
+# Blackjack Assistent – PWA (Phase 1–8, Version 0.8.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
-Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen) bleiben lokal auf dem Gerät.
+Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen,
+Academy-Videos und -Aussagen) bleiben lokal auf dem Gerät. Einzige Ausnahme: ein selbst eingetragener
+Yumeko-Server (Phase 8, standardmässig aus), siehe `server/README.md`.
 
 ## Struktur
 
@@ -22,22 +24,27 @@ js/calibration/          geometry (reine Mathematik), store (Speichern/Laden),
 js/test/                 Testmodus-Checkliste (7 Schritte)
 js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor,
                          Spielarchiv, Runde, YUMEKO-Lernzentrum, Wissen, Video lernen,
-                         Strategie-Labor (lab), Echtgeld & Risiko (risk), YUMEKO-Chat (chat)
+                         Strategie-Labor (lab), Echtgeld & Risiko (risk), YUMEKO-Chat (chat), Yumeko Academy (academy)
+js/academy/              youtube (Link prüfen, Video-ID), extract (Aussagen aus Text erkennen), verify (mathematische
+                         Prüfung), server-client (eigener Server, optional), academy-store (Videos, Aussagen, Meldungen)
 js/demo/                 Simulierte Spielzustände (Demo-Modus)
 js/game/                 hand (Kartenwerte), card-tracker (Mehrfachbestätigung, keine Doppelzählung),
                          round-state (Live-Runde, verdeckte Karte, Split, Rundenende), settle (Ergebnis W/L/Push)
-js/archive/              round-record (Datensatz, Prüfung, Filter), archive-store (IndexedDB, Export/Import)
+js/archive/              round-record (Datensatz, Prüfung, Filter), archive-store (IndexedDB, Export/Import),
+                         insights (Abweichungen, Lernfortschritt, wiederkehrende Fehler, Statistik)
 js/yumeko/               knowledge (Wissensspeicher, Lernverlauf), archive-analysis (Analyse), yumeko (Versionen, Prüfung),
                          video-learner (Szenenwechsel, Aktionsvorschläge), decision (Strategieintelligenz),
                          chat (datenbasierte Antworten), sim-store (gespeicherte Simulationen)
 js/risk/                 bankroll (Budget, Saldo, Protokoll, Limits), risk (Risikointelligenz, Schutzregeln)
 js/strategy/             standard (Basisstrategie 4–8 Decks), engine (Entscheidung), profiles (Profilspeicher),
-                         ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie)
+                         ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie),
+                         exact (exakte Erwartungswerte im endlichen Schuh), table-rules (Deckanzahl, unbekannte Regeln)
 js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich),
                          template-store (angelernte Muster + Zustimmung),
                          round-tracker (Glättung, neue Runde, gezogene Karte),
                          recognition-service (Live-Auswertung), detection-overlay
 tests/                   Logik-Tests (npm test) und Browser-Test (npm run test:browser)
+server/                  optionaler Referenz-Server für die Academy (Node, nicht Teil der App)
 package.json             nur für die Tests – die App selbst braucht keinen Build
 ```
 
@@ -88,7 +95,13 @@ npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright
                        # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages),
                        # Phase 6: Live-Runde, Archiv, Korrektur, Export, YUMEKO, Video, Überlauf
                        # Phase 7: Echtgeld/Limits/Stopp, Labor, Chat, Lernverlauf, Neustart
+                       # Phase 8: Deckanzahl „Unbekannt“, Academy (Link, Transkript, Prüfung,
+                       # Wissen, Statistik, Rechner, Daten), Offline, Kamera, iPhone-Überlauf
 ```
+
+`npm test` umfasst ab 0.8.0 auch `tests/phase8.test.mjs` (Datenbank-Migration, Export/Import, Löschen,
+Speicherfehler, Link-Prüfung, Video-ID, fehlendes Transkript, Aussagen-Erkennung, Strategieprüfung,
+Rechenmodell, Deckanzahl, Kamera-Dateien unverändert) und `tests/server.test.mjs` (Referenz-Server).
 
 ## Voraussetzungen
 
@@ -338,3 +351,106 @@ eigenen Server (Schlüssel nie im öffentlichen Code) und deine ausdrückliche Z
 - Kartenerkennung bei schwachem Licht und mit überlappenden Karten
 - Video lernen mit Aktionsvorschlägen (Datei und abgefilmter Bildschirm)
 - Strategie-Labor mit 500 000 Runden (Dauer, Erwärmung des Geräts)
+
+## Phase 8 (Version 0.8.0) – Intelligence & Academy
+
+### Neu und funktionsfähig
+
+- **Deckanzahl** (Einstellungen): Unbekannt, 1, 2, 4, 6 oder 8. Die letzte Wahl wird gespeichert, auch
+  „Unbekannt“. Bei „Unbekannt“ rechnet die App mit dem dokumentierten **Standardprofil 6 Decks**
+  (`UNKNOWN_DECK_PROFILE` in `js/strategy/standard.js`) und zeigt überall sichtbar „Decks unbekannt
+  (Annahme 6)“. Gespeichert als `rules.decks = 6` plus `rules.decksUnknown = true`; bestehende
+  Einstellungen bleiben unverändert (fehlt das Feld, gilt die bekannte Deckanzahl).
+- **Exakte Strategie-Engine** (`js/strategy/exact.js`): Erwartungswerte für Ziehen, Stehen, Verdoppeln, Teilen
+  und – wenn erlaubt – spätes Aufgeben, abhängig von der genauen Zusammensetzung des Schuhs (1–8 Decks).
+  Harte, weiche Hände und Paare, Regelvarianten (S17/H17, DAS, Peek, 3:2/6:5, Verdoppeln auf 9–11/10–11),
+  Begründung, Abstand zur zweitbesten Aktion und Unsicherheiten. Bei unbekannter Deckanzahl wird für 1, 6
+  und 8 Decks gerechnet und gezeigt, ob die Empfehlung gleich bleibt. Sichtbar im **Academy-Rechner**.
+  Die Live-Empfehlung und die Strategieprofile bleiben unverändert (dort weiterhin ohne Aufgeben).
+- **Yumeko Academy** (YUMEKO → Yumeko Academy, oder Einstellungen → Yumeko Academy):
+  - **YouTube-Bibliothek:** Link einfügen genügt, die Analyse startet ohne weitere Bestätigung. Link-Prüfung
+    (youtube.com, youtu.be, Shorts, Embed, Live, Startzeit; Playlists und Kanäle werden abgelehnt),
+    Video-ID, Duplikate werden erkannt. Jeder Schritt zeigt seinen echten Zustand: Wartet, Analyse läuft,
+    Transkript verfügbar, Videobildanalyse verfügbar, Strategien erkannt, Mathematische Prüfung läuft,
+    Erfolgreich geprüft, Teilweise geprüft, Nicht überprüfbar, Fehler. Keine Prozentanzeigen.
+  - **Ohne Server** (Standard) wird nichts gesendet. Die Karte zeigt offen „Kein Transkript verfügbar“ und
+    „Nicht überprüfbar“. Mit **Transkript einfügen** (z. B. aus der YouTube-Transkriptansicht kopiert,
+    Zeitstempel werden übernommen) läuft die Analyse lokal weiter.
+  - **Aussagen erkennen** (`js/academy/extract.js`): regelbasiert (kein Sprachmodell), Deutsch und Englisch:
+    Spielentscheidungen („Stand on 12 against 4 to 6“, „Asse und Achten immer teilen“), Versicherung,
+    Bust-Wahrscheinlichkeiten des Dealers, Hausvorteil, Tischregeln.
+  - **Mathematische Prüfung** (`js/academy/verify.js`): jede Situation mit dem Rechenmodell und der exakten
+    Engine. Ergebnis: bestätigt, widerlegt (mit Verlust pro 100 Einsätzen), teilweise richtig oder nicht
+    überprüfbar (Tischregeln werden nur mit deinen Einstellungen verglichen).
+  - **Wissensbibliothek:** alle Aussagen mit Quelle und Zeitpunkt im Video, Suche, Filter, erneut prüfen,
+    als fehlerhaft markieren, löschen; Widersprüche zwischen Videos werden angezeigt.
+  - **Lernstatistik:** nur aus echten Daten (Videos, geprüfte Aussagen, Spielarchiv, Simulationen,
+    gemeldete Erkennungsfehler).
+  - **Daten:** Speicherbelegung, Academy exportieren/importieren (Format `bjai-academy` v1, Import überschreibt
+    nichts), Academy zurücksetzen (nur Academy-Daten, zweimal tippen), eigener Server (optional).
+- **Ungeprüftes ändert die Strategie nicht:** Aussagen aus Videos landen nie direkt in der Strategie-Engine.
+  Nur mathematisch bestätigte, eindeutige Aussagen erscheinen in der YUMEKO-Wissensbibliothek als „geprüft“;
+  widerlegte und unbestätigte als Hypothese. Eine Freigabe für die Strategie bleibt wie bisher deine Entscheidung.
+- **Spielarchiv:** je Runde Abweichungen von der Empfehlung, Fehler laut Rechenmodell, unsicher erkannte
+  Karten, Quelle und Deckangabe; Lernfortschritt über die Zeit, wiederkehrende Fehler, Statistik nach Quelle
+  und Deckangabe (`js/archive/insights.js`). Die JSON-Sicherung enthält jetzt auch die Academy.
+- **Kamera-Lernmodus (Erweiterung):** In der Live-Ansicht gibt es „Erkennung melden“. Gespeichert werden nur
+  die erkannten Kartenwerte und Erkennungswerte, kein Bild. Die Runde wird als gemeldet markiert. Die
+  Kamera-Dateien selbst sind unverändert (ein Test prüft das).
+- **Simulator:** zusätzlich Verteilung der Rundenergebnisse und Ergebnisse je 100-Runden-Sitzung (wie viele
+  Sitzungen im Plus/Minus). Keine Gewinngarantien.
+- **Risikokontrolle:** Hinweis bei einer laufenden Verlustserie ab 4 Runden, ausdrücklich ohne Aufforderung
+  zum Zurückgewinnen und ohne Einsatzerhöhung. Alle Schutzregeln aus 0.7.0 bleiben.
+
+### Vorbereitet, aber nicht entschieden oder nicht aktiv
+
+- **Unbekannte Tischregeln** (`js/strategy/table-rules.js`): `ruleKnowledge`, `ruleVariants` und
+  `compareAcrossVariants` können Empfehlungen über mehrere Regelvarianten vergleichen. Ob die App das
+  automatisch tun soll (`UNKNOWN_RULES_MODES`: Unsicherheit anzeigen oder Varianten vergleichen) und wie
+  Empfehlungsvarianten gezeigt werden, ist **deine offene Entscheidung**. Standard: `null` (aus).
+- **Eigener Yumeko-Server:** Schnittstelle in der App und Referenz-Server in `server/` sind fertig und getestet,
+  aber nicht eingerichtet. Nichts Kostenpflichtiges ist aktiv. Siehe `server/README.md`.
+- **Videobildanalyse:** nicht vorhanden. Die App zeigt das offen an.
+
+### Speicher (ab 0.8.0)
+
+IndexedDB `bjassist` **Version 3**: neu `sources` (Videos), `claims` (Aussagen und Prüfergebnisse),
+`feedback` (gemeldete Erkennungsfehler). Die Migration legt nur neue Bereiche an; alle Daten aus 0.7.0
+bleiben unverändert (`MIGRATIONS` in `js/core/idb.js`). Speichern gilt erst nach dem Abschluss der
+IndexedDB-Transaktion als erfolgreich, damit ein voller Speicher als Fehler „Speicher voll“ sichtbar wird.
+Server-Adresse in `localStorage` unter `bjassist.academy.server` (nur die Adresse, nie ein Schlüssel).
+
+### Externe Dienste
+
+| Dienst | Wann | Was wird gesendet |
+|--------|------|-------------------|
+| keiner | Standard | nichts – die Academy arbeitet lokal |
+| eigener Yumeko-Server | nur wenn du in Academy → Daten eine https-Adresse einträgst | Video-ID und App-Version |
+| YouTube Data API (Google) | nur vom eigenen Server aus, wenn dort `YT_API_KEY` gesetzt ist | Video-ID |
+| youtube.com | nur wenn du „Video öffnen“ tippst (neuer Tab) | normaler Seitenaufruf durch den Browser |
+
+API-Schlüssel liegen nie in der App. Die App nimmt nur `https://`-Adressen ohne Zugangsdaten oder
+`key=`/`token=`-Parameter an. Mit eingetragenem Server ist die Academy nicht mehr „vollständig offline“;
+die App sagt das im Daten-Tab.
+
+### Installation und Veröffentlichung über GitHub
+
+1. Pull Request prüfen und in `main` übernehmen.
+2. GitHub Pages: Repository → Settings → Pages → „Deploy from a branch“, Branch `main`, Ordner `/ (root)`.
+   Die App läuft dann unter `https://<name>.github.io/blackjack-assistent/` (ohne Build-Schritt).
+3. Auf dem iPad die Seite in Safari öffnen. Eine bereits installierte App zeigt „Neue Version verfügbar“;
+   nach „Aktualisieren“ steht in den Einstellungen Version 0.8.0. Neu installieren: Teilen → Zum Home-Bildschirm.
+4. Vorher sichern (optional): Spielarchiv → Sicherung → „Als JSON exportieren“.
+5. Tests lokal: `npm install` (nur Playwright für den Browser-Test), dann `npm test` und `npm run test:browser`.
+
+### Bekannte Grenzen
+
+- Automatische Transkripte nur mit eigenem Server und zulässiger Quelle; YouTube erlaubt das Auslesen fremder
+  Untertitel nicht. Ohne Server: Transkript von Hand einfügen.
+- Die Aussagen-Erkennung ist regelbasiert. Ungewöhnliche Formulierungen werden übersehen (dann „keine
+  Strategien erkannt“), es wird aber nichts erfunden.
+- Exakte Engine: Teilen wird einmal gerechnet (kein Nachteilen), Asse nach Teilen bekommen eine Karte;
+  „kein Peek“ wird über die Blackjack-Wahrscheinlichkeit des Dealers berücksichtigt. Die Rechnung kann bei
+  seltenen Fällen auf dem iPad 1–3 Sekunden dauern.
+- Bust-Wahrscheinlichkeiten und Hausvorteil aus Videos werden mit Toleranz geprüft (±2,5 bzw. ±0,3 Prozentpunkte).
+- Kamera, „Erkennung melden“ und die Academy auf dem iPad nur auf einem echten Gerät abschliessend prüfbar.

@@ -170,6 +170,9 @@ export function bankrollStats(config, entries, now = new Date()) {
     avgStake: rounds ? money(stakeSum / rounds) : null,
     avgWagered: rounds ? money(wageredSum / rounds) : null,
     longestLossStreak: longest,
+    // 0.8.0: laufende Verlustserie (aufeinanderfolgende verlorene Runden bis jetzt)
+    currentLossStreak: streak,
+    currentLossRun: money(run),
     worstLossRun: money(worstRun),
     utilization: config.budget ? lossFromStart / config.budget : null,
     session,

@@ -207,6 +207,18 @@ export class KnowledgeStore extends Emitter {
     this.emit('change', { type: 'remove', id });
   }
 
+  /**
+   * Löschen ohne Sperre für neue Analysen (0.8.0, Yumeko Academy): wird genutzt, wenn die
+   * Quelle selbst gelöscht wird – kommt das Video später wieder dazu, darf das Wissen neu entstehen.
+   */
+  async removeQuiet(id) {
+    await this._ready;
+    if (!this.get(id)) return;
+    await this.db.delete('knowledge', id);
+    this.items = this.items.filter((i) => i.id !== id);
+    this.emit('change', { type: 'remove', id });
+  }
+
   /** Veraltete automatische Einträge entfernen (z. B. nach neuer Analyse). */
   async pruneAuto(prefix, keepIds) {
     const stale = this.items.filter((i) => i.auto && !i.edited && i.id.startsWith(prefix) && !keepIds.has(i.id));

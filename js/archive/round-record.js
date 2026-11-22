@@ -81,7 +81,9 @@ export function validateRound(r) {
     confirmation: r.confirmation === 'manual' ? 'manual' : 'auto',
     recognition: r.recognition && typeof r.recognition === 'object' ? {
       frames: num(r.recognition.frames), unsureFrames: num(r.recognition.unsureFrames),
-      minScore: num(r.recognition.minScore), avgScore: num(r.recognition.avgScore)
+      minScore: num(r.recognition.minScore), avgScore: num(r.recognition.avgScore),
+      // 0.8.0: vom Benutzer als fehlerhaft erkannt gemeldet (Kamera-Lernmodus)
+      ...(r.recognition.reported ? { reported: true } : {})
     } : null,
     corrections: Array.isArray(r.corrections) ? r.corrections.slice(-50) : [],
     money: r.money && typeof r.money === 'object' ? {
