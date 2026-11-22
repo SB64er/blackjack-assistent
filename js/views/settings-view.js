@@ -12,7 +12,7 @@ const BLOCKER_TEXT = {
   [RecognitionReason.TEMPLATES]: 'Karten nicht angelernt'
 };
 
-const RULES = [
+export const RULES = [
   { path: 'rules.decks',     label: 'Anzahl Decks',           options: [6, 8, 1, 2, 4],            text: (v) => String(v) },
   { path: 'rules.soft17',    label: 'Dealer bei Soft 17',     options: ['steht', 'zieht'],         text: (v) => (v === 'steht' ? 'Steht' : 'Zieht') },
   { path: 'rules.das',       label: 'Verdoppeln nach Split',  options: [true, false],              text: (v) => (v ? 'Erlaubt' : 'Nicht erlaubt') },
@@ -34,6 +34,7 @@ export class SettingsView extends View {
     this.listen(this.ctx.templates, 'change', () => this.render());
     this.listen(this.ctx.recognition, 'status', () => this.render());
     this.listen(this.ctx.updates, 'change', () => this.render());
+    this.listen(this.ctx.profiles, 'change', () => this.render());
     this.listen(this.ctx.display, 'change', () => this.render());
     this.render();
   }
@@ -185,6 +186,17 @@ export class SettingsView extends View {
                 <span class="row-value"></span>
               </button>` : ''}
           </div>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">STRATEGIEPROFILE</h2>
+          <div class="list">
+            <button type="button" class="row row--link" data-nav="strategie">
+              <span class="row-stack"><span>Aktives Profil</span><small>${esc(this.ctx.profiles.list().length)} Profile gespeichert · Profile verwalten, KI-Strategie</small></span>
+              <span class="row-value"><span class="type-badge type-badge--${esc(this.ctx.profiles.active.type)}">${esc(this.ctx.profiles.active.name)}</span> ${ICONS.chevron}</span>
+            </button>
+          </div>
+          <p class="group-help">Die Empfehlungen im Hauptbildschirm richten sich nach dem aktiven Profil und den Tischregeln unten.</p>
         </section>
 
         <section class="group">

@@ -9,7 +9,7 @@
 // - Eine neue Version wartet, bis der Benutzer "Aktualisieren" tippt
 //   (kein Neuladen mitten in einer Runde). Erstinstallation übernimmt sofort.
 // - Gelöscht werden nur alte Caches dieser App.
-const VERSION = 'bj-assistent-v0.4.0';
+const VERSION = 'bj-assistent-v0.5.0';
 const PREFIX = 'bj-assistent-';
 const NAV_TIMEOUT_MS = 3000;
 
@@ -36,6 +36,15 @@ const ASSETS = [
   './js/recognition/detection-overlay.js',
   './js/camera/camera-diagnostics.js',
   './js/views/learn-view.js',
+  './js/views/strategy-view.js',
+  './js/views/profile-view.js',
+  './js/strategy/standard.js',
+  './js/strategy/engine.js',
+  './js/strategy/ev.js',
+  './js/strategy/analysis.js',
+  './js/strategy/simulate.js',
+  './js/strategy/profiles.js',
+  './js/strategy/research.js',
   './js/camera/camera-service.js',
   './js/calibration/geometry.js',
   './js/calibration/calibration-store.js',

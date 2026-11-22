@@ -4,6 +4,7 @@ import { ICONS, esc } from '../core/dom.js';
 import { DEMO_SCENARIOS, RECOMMENDATIONS } from '../demo/scenarios.js';
 import { handInfo, upcardLabel, RANK_NAMES } from '../game/hand.js';
 import { RecognitionReason } from '../recognition/recognition-service.js';
+import { decide, ACTION_TO_RECOMMENDATION } from '../strategy/engine.js';
 
 let demoIndex = 0; // bleibt beim Wechsel zwischen Ansichten erhalten
 
@@ -76,6 +77,7 @@ export class MainView extends View {
     this.listen(this.ctx.display, 'change', r);
     this.listen(calibration, 'change', r);
     this.listen(templates, 'change', r);
+    this.listen(this.ctx.profiles, 'change', r);
     this.listen(recognition, 'update', r);
     this.listen(recognition, 'status', r);
     this.listen(recognition, 'event', (ev) => {
@@ -112,18 +114,30 @@ export class MainView extends View {
     }
   }
 
+  // Empfehlung des aktiven Strategieprofils (Engine).
+  _advise(cards, dealerUp, afterSplit = false) {
+    const { profiles, settings } = this.ctx;
+    const st = profiles.strategyFor();
+    const d = decide(cards, dealerUp, { rules: settings.get('rules'), strategyRules: st.strategyRules, overrides: st.overrides, afterSplit });
+    if (!d.action) return null;
+    return { ...RECOMMENDATIONS[ACTION_TO_RECOMMENDATION[d.action]], decision: d };
+  }
+
   // Spielzustand für die Anzeige (Demo oder Live).
   _model() {
-    const { settings, recognition, templates, camera } = this.ctx;
+    const { settings, recognition, templates, camera, profiles } = this.ctx;
+    const profile = { id: profiles.active.id, name: profiles.active.name, type: profiles.active.type };
     if (settings.get('demo')) {
       const s = DEMO_SCENARIOS[demoIndex];
       const confident = s.player.every((c) => c.confident) && s.dealerUp.confident;
+      const advice = confident ? this._advise(s.player, s.dealerUp) : null;
       return {
         mode: 'demo',
+        profile,
         dealerUp: s.dealerUp, dealerHole: null,
         hands: [{ title: 'DEINE HAND', cards: s.player }],
         uncertain: !confident,
-        recommendation: confident && s.recommendation ? RECOMMENDATIONS[s.recommendation] : null,
+        recommendation: advice,
         handText: s.handText
       };
     }
@@ -143,6 +157,11 @@ export class MainView extends View {
     }
     m.uncertain = !!(st && st.uncertain);
     m.missing = templates.missingRanks();
+    m.profile = profile;
+    if (res && !m.uncertain && res.dealerUp) {
+      const split = m.hands.length > 1;
+      m.advice = m.hands.map((h) => this._advise(h.cards, res.dealerUp, split));
+    }
     return m;
   }
 
@@ -158,6 +177,10 @@ export class MainView extends View {
           <span class="rec-warn-sub">Keine Sprachansage · Kamera und Bildschirm prüfen</span>
         </section>`;
     }
+    const profileTag = (r) => `
+          <button type="button" class="profile-tag profile-tag--${esc(m.profile.type)}" data-nav="strategie" aria-label="Strategieprofil: ${esc(m.profile.name)} – wechseln">
+            <span class="profile-tag-dot"></span>${esc(m.profile.name)}${r && r.decision && r.decision.deviates ? ' · weicht von Standard ab' : ''}
+          </button>`;
     if (m.mode === 'demo' && m.recommendation) {
       const r = m.recommendation;
       return `
@@ -165,6 +188,7 @@ export class MainView extends View {
           <span class="rec-kicker">EMPFEHLUNG · DEMO</span>
           <span class="rec-word" data-len="${r.label.length}">${esc(r.label)}</span>
           <span class="rec-hand">${esc(m.handText)}</span>
+          ${profileTag(r)}
           <button type="button" class="pill-btn" data-action="speech" aria-pressed="${speech}">
             ${speech ? ICONS.speaker : ICONS.speakerOff}<span>${speech ? 'Sprachausgabe an' : 'Sprachausgabe aus'}</span>
           </button>
@@ -210,12 +234,24 @@ export class MainView extends View {
     const main = handInfo(m.hands[0].cards);
     const vs = m.dealerUp ? ` gegen ${upcardLabel(m.dealerUp)}` : '';
     const second = m.hands[1] ? handInfo(m.hands[1].cards) : null;
+    const adv = m.advice && m.advice[0];
+    if (adv) {
+      const adv2 = m.advice[1];
+      return `
+      <section class="rec rec--${adv.tone}" aria-live="polite">
+        <span class="rec-kicker">EMPFEHLUNG${m.round ? ` · RUNDE ${m.round}` : ''}${second ? ' · HAND 1' : ''}</span>
+        <span class="rec-word" data-len="${adv.label.length}">${esc(adv.label)}</span>
+        <span class="rec-hand">${esc(`${main.text}${vs}`)}${second ? esc(` · Hand 2: ${second.text}${adv2 ? ` → ${adv2.label}` : ''}`) : ''}</span>
+        ${profileTag(adv)}
+      </section>`;
+    }
     return `
       <section class="rec rec--detected" aria-live="polite">
         <span class="rec-kicker">ERKANNT${m.round ? ` · RUNDE ${m.round}` : ''}</span>
         <span class="rec-word rec-word--hand" data-len="${Math.min(10, (main.text || '').length)}">${esc((main.text || '–').toUpperCase())}</span>
         <span class="rec-hand">${esc(`${main.text}${vs}`)}${second ? esc(` · Hand 2: ${second.text}`) : ''}</span>
-        <span class="rec-note">Spielzugempfehlung folgt in Phase 4</span>
+        <span class="rec-note">${main.blackjack ? 'Blackjack – keine Entscheidung nötig' : (main.bust ? 'Überkauft' : 'Keine Empfehlung für diese Hand')}</span>
+        ${profileTag(null)}
       </section>`;
   }
 

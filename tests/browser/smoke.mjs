@@ -1,7 +1,8 @@
 // Browser-Test (Chromium über Playwright) in iPad- und iPhone-Grössen.
 // Aufruf: npm run test:browser   (benötigt Playwright: npm i -D playwright)
 // Prüft: Start ohne Fehler, Kamera (Testkamera), hängender Kamerastart,
-// blockierte Wiedergabe, Erhalt gespeicherter Daten, Offline-Start, Layout ohne Überlauf.
+// blockierte Wiedergabe, Erhalt gespeicherter Daten, Offline-Start, Layout ohne Überlauf,
+// Strategieprofile (Phase 5) und Betrieb unter /blackjack-assistent/ (GitHub Pages).
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -14,8 +15,15 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
 
 let swSuffix = ''; // simuliert eine neue Version von sw.js
+const PAGES_PREFIX = 'blackjack-assistent/';
+const outside = []; // Anfragen ausserhalb des GitHub-Pages-Unterpfads
 const server = createServer(async (req, res) => {
-  const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^([/\\])+/, '');
+  let path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^([/\\])+/, '');
+  if (req.headers.host.startsWith('127.0.0.1')) {
+    // Zweiter Zugang wie GitHub Pages: nur unter /blackjack-assistent/ erreichbar.
+    if (!path.startsWith(PAGES_PREFIX) && path !== PAGES_PREFIX.slice(0, -1)) { outside.push(path); res.writeHead(404); res.end('nicht gefunden'); return; }
+    path = path.slice(PAGES_PREFIX.length);
+  }
   try {
     const file = path || 'index.html';
     let body = await readFile(join(ROOT, file));
@@ -28,6 +36,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const BASE = `http://localhost:${server.address().port}/`;
+const PAGES = `http://127.0.0.1:${server.address().port}/${PAGES_PREFIX}`;
 
 const results = [];
 const check = (name, ok, info = '') => { results.push({ name, ok, info }); console.log(`${ok ? '✓' : '✗'} ${name}${info ? ` – ${info}` : ''}`); };
@@ -60,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.4.0 angezeigt`, (await page.textContent('.footnote')).includes('0.4.0'));
+    check(`${name}: Version 0.5.0 angezeigt`, (await page.textContent('.footnote')).includes('0.5.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -137,7 +146,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.4.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.5.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -158,6 +167,121 @@ try {
       check('Update: keine Version wartet mehr', !waiting);
     }
     swSuffix = '';
+    await ctx.close();
+  }
+  // 7) Strategieprofile: anlegen, aktivieren, wechseln ohne Neuladen, speichern, löschen
+  {
+    const { ctx, page, errors } = await newPage(SIZES['iPad quer']);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    const recWord = () => page.textContent('.rec-word');
+    check('Profile: Standard ist aktiv', await page.evaluate(() => window.__bj.profiles.activeId === 'standard'));
+    check('Profile: Demo empfiehlt mit Standard STEHEN (16 gegen 6)', (await recWord()).trim() === 'STEHEN');
+    await page.click('.profile-tag');
+    await page.waitForSelector('[data-action="new"]');
+    await page.click('[data-action="new"]');
+    await page.fill('input[name="name"]', 'Testprofil');
+    await page.fill('textarea[name="description"]', 'Browser-Test');
+    await page.click('[data-action="create-new"]');
+    await page.waitForSelector('.strategy-table');
+    check('Profile: neues Profil öffnet den Editor', true);
+    // Zelle hart 16 gegen 6 auf Ziehen setzen (über die Tabelle)
+    await page.click('[data-action="cell"][data-key="hard:16:6"]');
+    await page.click('[data-action="set-code"][data-code="H"]');
+    const own = await page.evaluate(() => {
+      const p = window.__bj.profiles.list().find((x) => x.name === 'Testprofil');
+      return p && p.overrides['hard:16:6'];
+    });
+    check('Profile: Zelle in der Tabelle geändert', own === 'H', String(own));
+    await page.evaluate(() => { const b = document.querySelector('[data-action="close-sheet"]'); if (b) b.click(); });
+    await page.click('[data-action="activate"]');
+    const active = await page.evaluate(() => window.__bj.profiles.active.name);
+    check('Profile: Testprofil aktiviert', active === 'Testprofil', active);
+    const loads = [];
+    page.on('load', () => loads.push(1));
+    await page.evaluate(() => window.__bj.navigate('haupt'));
+    await page.waitForSelector('.screen-main');
+    check('Profile: Empfehlung folgt dem aktiven Profil ohne Neuladen', (await recWord()).trim() === 'ZIEHEN' && loads.length === 0);
+    check('Profile: Hauptansicht zeigt Profilnamen', (await page.textContent('.profile-tag')).includes('Testprofil'));
+    // Wechsel zurück zu Standard ohne Neuladen
+    await page.evaluate(() => window.__bj.profiles.activate('standard'));
+    await page.waitForFunction(() => document.querySelector('.rec-word')?.textContent.trim() === 'STEHEN', null, { timeout: 3000 }).catch(() => {});
+    check('Profile: Zurückwechseln aktualisiert sofort', (await recWord()).trim() === 'STEHEN');
+    await page.evaluate(() => { const p = window.__bj.profiles.list().find((x) => x.name === 'Testprofil'); window.__bj.profiles.activate(p.id); });
+    // Speichern + Wiederherstellen
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    const after = await page.evaluate(() => ({ n: window.__bj.profiles.list().length, active: window.__bj.profiles.active.name }));
+    check('Profile: nach Neuladen wiederhergestellt', after.n === 2 && after.active === 'Testprofil', JSON.stringify(after));
+    // Aktives Profil kann nicht gelöscht werden
+    await page.click('.profile-tag');
+    await page.waitForSelector('.profile-card');
+    const activeCard = page.locator('.profile-card.is-active');
+    check('Profile: aktives Profil hat keinen Löschen-Knopf', (await activeCard.locator('[data-action="delete"]').count()) === 0);
+    check('Profile: aktives Profil klar markiert', (await activeCard.textContent()).includes('AKTIV'));
+    // Standard aktivieren, dann Testprofil löschen (zwei Tipps)
+    await page.click('.profile-card:not(.is-active) [data-action="activate"]');
+    await page.click('.profile-card:not(.is-active) [data-action="delete"]');
+    const stillThere = await page.evaluate(() => window.__bj.profiles.list().length);
+    check('Profile: Löschen braucht Bestätigung', stillThere === 2);
+    await page.click('.profile-card:not(.is-active) [data-action="delete"]');
+    const left = await page.evaluate(() => window.__bj.profiles.list().map((p) => p.id));
+    check('Profile: nach Bestätigung gelöscht', left.length === 1 && left[0] === 'standard', left.join(','));
+    // KI-Strategie ohne Server: berechnet lokal, zeigt offen "nicht eingerichtet"
+    await page.click('[data-action="ai"]');
+    await page.waitForSelector('[data-action="ai-run"]');
+    const sheetText = await page.textContent('.sheet');
+    check('KI: Online-Recherche ehrlich als nicht eingerichtet angezeigt', /Keine Online-Recherche verbunden/.test(sheetText) && /täuscht keine Recherche vor/.test(sheetText));
+    check('KI: Online-Option ohne Server gesperrt', await page.isDisabled('[data-action="ai-online"]'));
+    await page.click('[data-action="ai-run"]');
+    await page.waitForSelector('[data-action="ai-activate"]', { timeout: 15000 });
+    const ai = await page.evaluate(() => window.__bj.profiles.list().find((p) => p.type === 'ai'));
+    check('KI: Profil gespeichert (Typ KI, lokal berechnet)', !!ai && ai.data.research.status !== 'ok', ai ? ai.data.research.status : 'fehlt');
+    await page.click('[data-action="close-sheet"]');
+    check('KI: Profilkarte visuell abgehoben', (await page.locator('.profile-card--ai').count()) === 1);
+    check('Profile: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 8) Migration: Daten aus v0.4.0 (ohne Profile) -> Standard aktiv, Tischregeln bleiben
+  {
+    const { ctx, page } = await newPage(SIZES['iPad hoch'], () => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.clear();
+      localStorage.setItem('bjassist.settings', JSON.stringify({ roundMode: 'manuell', speech: false, demo: true, rules: { decks: 6, soft17: 'zieht', das: true, surrender: 'keine', payout: '3:2' }, camera: { fps: 30, keepAwake: true }, recognition: { fps: 4, showBoxes: true } }));
+    });
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    const m = await page.evaluate(() => ({ active: window.__bj.profiles.activeId, n: window.__bj.profiles.list().length, s17: window.__bj.settings.get('rules.soft17'), mode: window.__bj.settings.get('roundMode') }));
+    check('Migration 0.4.0: Standardprofil aktiv, Einstellungen unverändert', m.active === 'standard' && m.n === 1 && m.s17 === 'zieht' && m.mode === 'manuell', JSON.stringify(m));
+    // Ohne Aufgeben-Regel: 16 gegen 10 = Ziehen statt Aufgeben
+    await page.evaluate(() => { for (let i = 0; i < 4; i++) document.querySelector('[data-action="next-demo"]').click(); });
+    check('Regeln: ohne Aufgeben wird 16 gegen 10 zu ZIEHEN', (await page.textContent('.rec-word')).trim() === 'ZIEHEN');
+    await ctx.close();
+  }
+
+  // 9) GitHub Pages: App unter /blackjack-assistent/ inkl. Service Worker und offline
+  {
+    outside.length = 0;
+    const { ctx, page, errors } = await newPage(SIZES['iPad quer']);
+    await page.goto(PAGES);
+    const ok = await page.waitForSelector('.screen-main', { timeout: 8000 }).then(() => true).catch(() => false);
+    check('GitHub Pages: App startet unter /blackjack-assistent/', ok);
+    const scope = await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.scope, null, { timeout: 10000 })
+      .then((h) => h.jsonValue()).catch(() => null);
+    check('GitHub Pages: Service Worker im Unterpfad registriert', !!scope && scope.endsWith('/blackjack-assistent/'), String(scope));
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10000 }).catch(() => {});
+    await page.click('.profile-tag');
+    await page.waitForSelector('.profile-card');
+    check('GitHub Pages: Strategieprofile erreichbar', true);
+    await ctx.setOffline(true);
+    await page.reload();
+    const off = await page.waitForSelector('.screen-main', { timeout: 6000 }).then(() => true).catch(() => false);
+    check('GitHub Pages: offline startbar', off);
+    await ctx.setOffline(false);
+    check('GitHub Pages: keine Anfragen ausserhalb des Unterpfads', outside.length === 0, outside.join(', '));
+    check('GitHub Pages: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 } catch (err) {
