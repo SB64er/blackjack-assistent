@@ -87,7 +87,7 @@ export class LabView extends View {
         case 'save': {
           if (!this._result) return;
           const r = this._result;
-          await simulations.add({ rules: r.rules, rounds: r.rounds, seed: r.seed, results: r.results.map(({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds }) => ({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds })), note: 'Strategie-Labor' });
+          await simulations.add({ rules: r.rules, rounds: r.rounds, seed: r.seed, results: r.results.map(({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds, sessions }) => ({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds, ...(sessions && sessions.n ? { sessions } : {}) })), note: 'Strategie-Labor' });
           await knowledge.logHistory('simulation', `Simulation gespeichert: ${r.results.length} Strategien × ${r.rounds.toLocaleString('de-CH')} Runden (Startwert ${r.seed}).`);
           this._notice = { tone: 'ok', text: 'Simulation gespeichert (getrennt von echten Runden).' };
           break;
@@ -174,7 +174,23 @@ export class LabView extends View {
       </div>
       <p class="hint">E. = Einsatz-Einheiten (ursprünglicher Einsatz = 1). Ertrag pro ursprünglicher Einheit = Simulationswert; pro tatsächlich gesetzter Einheit: ${r.results.map((x) => `${esc(x.name)} ${pct(x.perWagered, 2)}`).join(', ')}.</p>
       <p class="hint">Alle Strategien wurden mit derselben Mischfolge (Startwert ${r.seed}), denselben Regeln (${esc(rulesText(r.rules))}) und ${r.rounds.toLocaleString('de-CH')} Runden gespielt. Unterschiede innerhalb des ±-Bereichs sind nicht aussagekräftig – dann entscheidet die exakte Mathematik. Eine hohe Gewinnquote beweist keine profitable Strategie.</p>
+      ${this._distributionHtml(r)}
       <button type="button" class="btn btn--secondary" data-action="save">Ergebnis speichern</button>`;
+  }
+
+  // 0.8.0: Gewinn- und Verlustverteilung (aus denselben simulierten Runden).
+  _distributionHtml(r) {
+    const withSessions = r.results.filter((x) => x.sessions && x.sessions.n);
+    const base = r.results[0];
+    if (!base || !base.distribution) return '';
+    const fmtU = (v) => `${v > 0 ? '+' : ''}${String(v).replace('.', ',')}`;
+    return `
+      <div class="analysis-block">
+        <strong>Gewinn- und Verlustverteilung <span class="kind kind--sim">Simulation</span></strong>
+        ${withSessions.length ? `<ul class="ev-list">${withSessions.map((x) => `<li><span>${esc(x.name)}: nach je ${x.sessions.size} Runden in ${rate(x.sessions.lossShare)} der Fälle im Minus; 90 % der Ergebnisse zwischen ${fmtU(Math.round(x.sessions.p05))} und ${fmtU(Math.round(x.sessions.p95))} E.</span><b>${x.sessions.n.toLocaleString('de-CH')} Blöcke</b></li>`).join('')}</ul>` : ''}
+        <p class="hint">Ergebnis je Runde (${esc(base.name)}): ${base.distribution.filter((d) => d.share >= 0.001).map((d) => `${fmtU(d.net)} E. ${rate(d.share)}`).join(' · ')}</p>
+        <p class="hint">Simulationswerte zeigen die Schwankung bei diesen Regeln. Sie sind keine Vorhersage und keine Gewinngarantie – auf Dauer wirkt der Hausvorteil.</p>
+      </div>`;
   }
 
   render() {

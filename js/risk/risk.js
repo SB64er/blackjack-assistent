@@ -11,6 +11,7 @@
 // Reine Logik (ohne DOM) -> testbar.
 
 export const RISK_LEVEL_TEXT = { off: 'Echtgeld-Modus aus', ok: 'Im Rahmen', warn: 'Achtung', stop: 'Stopp empfohlen' };
+export const LOSS_STREAK_WARN = 4; // ab so vielen verlorenen Runden in Folge wird auf die Serie hingewiesen (0.8.0)
 export const HAND_SD = 1.15; // typische Standardabweichung pro Runde in Einsätzen (Blackjack)
 
 const fmt = (x, cur) => `${(Math.round(x * 100) / 100).toFixed(2)} ${cur}`;
@@ -83,6 +84,11 @@ export function assessRisk({ config, stats, strategy = null, proposedStake = nul
   if (stats.raisesAfterLoss > 0) {
     warn = true;
     add('warn', 'chasing', `Im Protokoll wurde der Einsatz ${stats.raisesAfterLoss}× direkt nach einem Verlust erhöht. Das ist das Muster von Verlustjagd/Martingale und erhöht das Risiko grosser Verluste. Es lässt sich damit nichts zurückgewinnen, was nicht dem Zufall überlassen bleibt.`);
+  }
+  // 0.8.0: laufende Verlustserie erkennen – Information, nie Aufforderung zum Zurückgewinnen.
+  if (stats.currentLossStreak >= LOSS_STREAK_WARN) {
+    warn = true;
+    add('warn', 'loss-streak', `Verlustserie: ${stats.currentLossStreak} Runden in Folge verloren (${fmt(stats.currentLossRun || 0, cur)}). Solche Serien sind beim Blackjack normaler Zufall und kein Zeichen, dass ein Gewinn „fällig“ ist. Den Einsatz nicht erhöhen; eine Pause ist sinnvoll.`);
   }
   if (stats.drawdown > 0 && config.budget) {
     const dd = stats.drawdown / config.budget;

@@ -435,7 +435,7 @@ test('Strategieprofile aus 0.6.0 bleiben erhalten (Standard + YUMEKO + eigene)',
 });
 
 test('Migration aus 0.6.0: Datenbank v2 mit neuen Bereichen, Archiv-Einträge Schema 1 lesbar', async () => {
-  assert.equal(DB_VERSION, 2);
+  assert.ok(DB_VERSION >= 2, 'ab 0.8.0 Version 3 – Bereiche aus Version 2 bleiben'); // 0.8.0: DB_VERSION 3
   for (const s of ['rounds', 'knowledge', 'videos', 'versions', 'meta']) assert.ok(STORES.includes(s), `alter Bereich ${s} bleibt`);
   for (const s of ['simulations', 'ledger', 'history']) assert.ok(STORES.includes(s), `neuer Bereich ${s}`);
   // Gespeicherte 0.6.0-Runde mit Einsatz (damals: net in Geld, payout = net)
@@ -462,12 +462,12 @@ test('Migration aus 0.6.0: Datenbank v2 mit neuen Bereichen, Archiv-Einträge Sc
 });
 
 // --- 15. Offline-Funktion und GitHub-Pages-Kompatibilität -----------------------------------
-test('Offline/GitHub Pages: neue Dateien im Offline-Speicher, nur relative Pfade, Version 0.7.0', () => {
+test('Offline/GitHub Pages: neue Dateien im Offline-Speicher, nur relative Pfade, Version (seit 0.8.0: 0.8.0)', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   for (const f of ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/yumeko/decision.js', 'js/yumeko/chat.js', 'js/yumeko/sim-store.js', 'js/views/lab-view.js', 'js/views/risk-view.js', 'js/views/chat-view.js']) {
     assert.ok(sw.includes(`'./${f}'`), `${f} im Offline-Speicher`);
   }
-  assert.match(sw, /bj-assistent-v0\.7\.0/);
+  assert.match(sw, /bj-assistent-v0\.8\.0/);
   const files = ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/views/lab-view.js', 'js/views/risk-view.js', 'js/views/chat-view.js', 'js/yumeko/chat.js'];
   for (const f of files) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');

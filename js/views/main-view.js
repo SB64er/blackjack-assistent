@@ -46,7 +46,8 @@ function handBlock(title, cards, info) {
 const EVENT_TEXT = {
   'round-start': 'Neue Runde erkannt',
   'card-added': 'Karte gezogen',
-  'round-suggested': 'Neue Runde? Tippe auf „Neue Hand“.'
+  'round-suggested': 'Neue Runde? Tippe auf „Neue Hand“.',
+  'report-saved': 'Erkennung gemeldet – die Runde wird im Archiv markiert.'
 };
 
 export class MainView extends View {
@@ -125,6 +126,7 @@ export class MainView extends View {
       }
       case 'dismiss-pending': ui.set('pendingRound', null); break;
       case 'finish-round': recognition.finishRound(); break;
+      case 'report': this._report(); break;
       case 'mode-auto': settings.set('roundMode', 'automatisch'); break;
       case 'mode-manual': settings.set('roundMode', 'manuell'); break;
       case 'speech': settings.set('speech', !settings.get('speech')); break;
@@ -138,6 +140,27 @@ export class MainView extends View {
         break;
       default: break;
     }
+  }
+
+  // 0.8.0 Kamera-Lernmodus: falsche Kartenerkennung melden (nur Kartenwerte, keine Bilder).
+  _report() {
+    const { recognition, academy } = this.ctx;
+    if (!academy) return;
+    const snap = recognition.round ? recognition.round.snapshot() : null;
+    const st = recognition.state;
+    const plainCards = (list) => (list || []).map((c) => ({ rank: c.rank, score: c.score ?? null }));
+    academy.addFeedback({
+      kind: 'wrong-card',
+      roundId: snap ? snap.id : null,
+      dealer: plainCards(snap ? snap.dealer : []),
+      hands: snap ? snap.hands.map((h) => plainCards(h.cards)) : [],
+      uncertain: !!(st && st.uncertain)
+    }).then(() => {
+      this._event = { type: 'report-saved' };
+      clearTimeout(this._eventTimer);
+      this._eventTimer = setTimeout(() => { this._event = null; this.render(); }, 2500);
+      this.render();
+    }).catch((err) => console.warn('[kamera] Meldung nicht gespeichert', err));
   }
 
   // Empfehlung des aktiven Strategieprofils (Engine).
@@ -415,6 +438,7 @@ export class MainView extends View {
           ? '<button type="button" class="btn btn--primary" data-action="new-hand">Neue Hand</button>'
           : `<div class="waiting"><span class="dot dot--ok"></span>${esc(autoInfo)}</div>`}
         ${!demo && m.roundActive ? '<button type="button" class="btn btn--ghost" data-action="finish-round">Runde abschliessen</button>' : ''}
+        ${!demo && m.roundActive && this.ctx.academy ? '<button type="button" class="btn btn--ghost" data-action="report">Erkennung melden</button>' : ''}
         ${demo ? `
           <button type="button" class="btn btn--ghost" data-action="next-demo">
             Demo: nächstes Szenario (${demoIndex + 1}/${DEMO_SCENARIOS.length}) ${ICONS.chevron}

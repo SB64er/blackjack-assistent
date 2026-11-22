@@ -7,8 +7,35 @@ import { load, save } from './store.js';
 export const DB_NAME = 'bjassist';
 // Version 2 (0.7.0): neue Bereiche für Simulationen (getrennt von echten Runden),
 // Echtgeld-Protokoll und Lernverlauf. Vorhandene Bereiche bleiben unverändert.
-export const DB_VERSION = 2;
-export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta', 'simulations', 'ledger', 'history'];
+// Version 3 (0.8.0, Yumeko Academy): neue Bereiche "sources" (Lernquellen, z. B. YouTube-Videos
+// mit Analysestatus), "claims" (erkannte Strategie-Aussagen mit Prüfergebnis) und
+// "feedback" (gemeldete Fehlerkennungen der Kamera). Vorhandene Bereiche bleiben unverändert.
+export const DB_VERSION = 3;
+export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta', 'simulations', 'ledger', 'history', 'sources', 'claims', 'feedback'];
+// Datenbank-Versionen und was beim Wechsel passiert (für die Dokumentation und Tests).
+export const MIGRATIONS = [
+  { version: 1, stores: ['rounds', 'knowledge', 'videos', 'versions', 'meta'], note: '0.6.0: Spielarchiv und YUMEKO-Wissen' },
+  { version: 2, stores: ['simulations', 'ledger', 'history'], note: '0.7.0: Simulationen, Echtgeld-Protokoll, Lernverlauf' },
+  { version: 3, stores: ['sources', 'claims', 'feedback'], note: '0.8.0: Yumeko Academy (Lernquellen, Strategie-Aussagen, Erkennungsmeldungen)' }
+];
+
+/** Speicher voll? (IndexedDB: QuotaExceededError, localStorage-Ausweichlösung: eigene Meldung) */
+export function isQuotaError(err) {
+  if (!err) return false;
+  const name = err.name || (err.inner && err.inner.name) || '';
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || err.code === 22 || err.code === 'quota' || /Speicher voll|quota/i.test(err.message || '');
+}
+
+/** Freier Speicher laut Browser (nur Schätzung des Browsers; null, wenn nicht verfügbar). */
+export async function storageEstimate(nav = globalThis.navigator) {
+  try {
+    if (nav && nav.storage && nav.storage.estimate) {
+      const e = await nav.storage.estimate();
+      if (Number.isFinite(e.usage) && Number.isFinite(e.quota)) return { usage: e.usage, quota: e.quota };
+    }
+  } catch { /* nicht verfügbar */ }
+  return null;
+}
 
 const reqP = (req) => new Promise((resolve, reject) => {
   req.onsuccess = () => resolve(req.result);
@@ -29,7 +56,17 @@ class IdbDatabase {
   get(store, id) { return reqP(this._tx(store).get(id)).then((x) => x ?? null); }
   delete(store, id) { return reqP(this._tx(store, 'readwrite').delete(id)); }
   clear(store) { return reqP(this._tx(store, 'readwrite').clear()); }
-  put(store, value) { return reqP(this._tx(store, 'readwrite').put(value)).then(() => value); }
+  // 0.8.0: wartet auf das Ende der Transaktion, damit "Speicher voll" (QuotaExceededError,
+  // tritt erst beim Abschluss auf) als Fehler ankommt statt still verloren zu gehen.
+  put(store, value) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(value);
+      tx.oncomplete = () => resolve(value);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Speichern abgebrochen.'));
+    });
+  }
 
   putMany(store, values) {
     return new Promise((resolve, reject) => {
@@ -60,7 +97,9 @@ export class MemoryDatabase {
   _save(store) {
     if (!this.persist) return;
     if (!this.persist.save(`db.${store}`, [...this.data.get(store).values()])) {
-      throw new Error('Speicher voll: Daten konnten nicht gespeichert werden. Bitte das Archiv exportieren.');
+      const err = new Error('Speicher voll: Daten konnten nicht gespeichert werden. Bitte das Archiv exportieren.');
+      err.code = 'quota';
+      throw err;
     }
   }
 

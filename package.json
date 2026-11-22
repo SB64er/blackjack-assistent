@@ -1,6 +1,6 @@
 {
   "name": "blackjack-assistent",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Blackjack-Assistent (PWA). Kein Build-Schritt – package.json dient nur den Tests.",

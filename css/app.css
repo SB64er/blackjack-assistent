@@ -1023,3 +1023,34 @@ ul.ev-list li:last-child { border-bottom: 0; padding-bottom: 0; }
 ul.ev-list li > span { min-width: 0; color: var(--text-2); overflow-wrap: anywhere; }
 ul.ev-list li > b { text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; max-width: 55%; overflow-wrap: anywhere; }
 .segmented--3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ===== Phase 8 (0.8.0): Deckanzahl, Yumeko Academy ===== */
+.segmented--decks { grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr)); margin-bottom: 8px; }
+.segmented--decks button { padding: 0 4px; }
+.yt-form { display: flex; flex-direction: column; gap: 8px; }
+.yt-form .field input { width: 100%; }
+.academy-list { display: flex; flex-direction: column; gap: 10px; }
+.academy-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
+.academy-card p { margin: 0; overflow-wrap: anywhere; }
+.academy-card .version-head strong { overflow-wrap: anywhere; min-width: 0; }
+.academy-card .version-head .kind { margin-left: 0; flex-shrink: 0; }
+.academy-card--verified { border-left: 4px solid var(--ok); }
+.academy-card--partial, .academy-card--unverifiable { border-left: 4px solid var(--warn); }
+.academy-card--error { border-left: 4px solid var(--danger); }
+.academy-card--running, .academy-card--verifying, .academy-card--transcript, .academy-card--strategies, .academy-card--frames { border-left: 4px solid var(--yumeko); }
+.academy-card .btn-row { flex-wrap: wrap; }
+.academy-card .btn-row .btn { flex: 0 1 auto; margin-top: 0; text-decoration: none; }
+.step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.step-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; align-items: start; color: var(--text-2); }
+.step-list li small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.step-list b { font-weight: 600; }
+.step-list .step-mark { font-weight: 700; text-align: center; }
+.step-list .step-ok .step-mark { color: var(--ok); }
+.step-list .step-fail .step-mark { color: var(--danger); }
+.step-list .step-run .step-mark { color: var(--yumeko); }
+.step-list .step-skip, .step-list .step-wait { opacity: .75; }
+.claim-mini { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.claim-mini li { overflow-wrap: anywhere; }
+.claim-mini .kind { margin: 0 6px 0 0; }
+.knowledge-card a { color: var(--stand); overflow-wrap: anywhere; }
+.screen-academy .tab-scroll { margin-bottom: 2px; }

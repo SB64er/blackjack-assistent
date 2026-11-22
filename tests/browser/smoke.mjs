@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.7.0 angezeigt`, (await page.textContent('.footnote')).includes('0.7.0'));
+    check(`${name}: Version 0.8.0 angezeigt`, (await page.textContent('.footnote')).includes('0.8.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -150,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.7.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.8.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -417,6 +417,8 @@ try {
     await page.fill('input[name="budget"]', '100');
     await page.fill('input[name="start"]', '100');
     await page.click('[data-action="save-setup"]');
+    // warten, bis gespeichert ist (Speichern endet erst nach dem IndexedDB-Commit, danach neu gezeichnet)
+    await page.waitForFunction(() => window.__bj.bankroll.config.budget === 100 && /Budget und Startsaldo gespeichert/.test(document.querySelector('.sub-content').textContent));
     await page.waitForSelector('input[name="sessionLoss"]');
     await page.fill('input[name="maxBet"]', '10');
     await page.fill('input[name="sessionLoss"]', '20');
@@ -474,6 +476,108 @@ try {
     const kept = await page.evaluate(async () => { await window.__bj.bankroll.ready(); await window.__bj.simulations.ready(); return { b: window.__bj.bankroll.stats().balance, s: window.__bj.simulations.list.length, on: window.__bj.bankroll.config.enabled }; });
     check('Phase 7: Echtgeld-Protokoll und Simulation nach Neustart erhalten', kept.b === 80 && kept.s === 1 && kept.on, JSON.stringify(kept));
     check('Phase 7: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  // 13) Phase 8: Deckanzahl „Unbekannt“, Yumeko Academy, Offline, Kamera
+  {
+    const { ctx, page, errors } = await newPage(SIZES['iPad hoch']);
+    const external = [];
+    page.on('request', (req) => { const u = new URL(req.url()); if (!['localhost', '127.0.0.1'].includes(u.hostname)) external.push(u.hostname); });
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    // Deckanzahl
+    await page.click('[data-nav="einstellungen"]');
+    await page.click('[data-action="decks"][data-value="unbekannt"]');
+    check('Deckanzahl: „Unbekannt“ wählbar, Annahme sichtbar gekennzeichnet', /Annahme, keine Erkennung/.test(await page.textContent('.sub-content')));
+    check('Einstellungen mit Deckauswahl ohne Überlauf', !(await overflow(page)));
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    await page.click('[data-nav="einstellungen"]');
+    check('Deckanzahl: „Unbekannt“ bleibt nach Neustart ausgewählt', (await page.getAttribute('[data-action="decks"][data-value="unbekannt"]', 'aria-pressed')) === 'true');
+    // Academy: Link einfügen startet die Analyse automatisch (ohne Server: ehrlich „kein Transkript“)
+    await page.evaluate(() => window.__bj.navigate('akademie'));
+    await page.waitForSelector('input[name="yt-url"]');
+    await page.fill('input[name="yt-url"]', 'https://youtu.be/dQw4w9WgXcQ');
+    await page.waitForFunction(() => { const s = window.__bj.academy.sources[0]; return s && s.status === 'unverifiable'; }, null, { timeout: 8000 });
+    const card = await page.textContent('.academy-card');
+    check('Academy: Link startet Analyse automatisch, Status sichtbar', /Nicht überprüfbar/.test(card));
+    check('Academy: fehlendes Transkript wird angezeigt, nichts erfunden', /Kein Transkript verfügbar/.test(card) && (await page.evaluate(() => window.__bj.academy.claims.length)) === 0);
+    check('Academy: ohne Server keine Anfrage an YouTube oder andere Dienste', external.length === 0, external.join(','));
+    // Transkript einfügen -> Aussagen erkannt und mathematisch geprüft
+    await page.click('[data-action="transcript"]');
+    await page.fill('textarea[name="transcript"]', '0:05\nAlways split aces and eights.\n0:20 Stand on 12 against a 2.\n0:30 Never take insurance.');
+    await page.click('[data-action="sheet-save"]');
+    await page.waitForFunction(() => { const s = window.__bj.academy.sources[0]; return s && ['verified', 'partial'].includes(s.status); }, null, { timeout: 15000 });
+    check('Academy: eingefügtes Transkript analysiert und geprüft', /Erfolgreich geprüft/.test(await page.textContent('.academy-card')));
+    check('Academy: YouTube-Bibliothek ohne Überlauf', !(await overflow(page)));
+    await page.click('[data-action="tab"][data-tab="wissen"]');
+    const kb = await page.textContent('[data-slot="body"]');
+    check('Academy: Wissensbibliothek zeigt bestätigte und widerlegte Aussagen mit Quelle', /Mathematisch bestätigt/.test(kb) && /Mathematisch widerlegt/.test(kb) && /als fehlerhaft markiert/.test(kb) && /\(0:20\)/.test(kb));
+    await page.fill('input[name="q"]', 'versicherung');
+    check('Academy: Wissen durchsuchen', (await page.locator('.knowledge-card').count()) === 1);
+    check('Academy: Wissensbibliothek ohne Überlauf', !(await overflow(page)));
+    await page.click('[data-action="tab"][data-tab="statistik"]');
+    check('Academy: Lernstatistik aus echten Daten', /bestätigte Strategien/.test(await page.textContent('.stat-grid')) && (await page.textContent('.stat-grid')).includes('1'));
+    check('Academy: Lernstatistik ohne Überlauf', !(await overflow(page)));
+    await page.click('[data-action="tab"][data-tab="rechner"]');
+    await page.click('[data-action="calc"]');
+    await page.waitForSelector('.analysis-block', { timeout: 15000 });
+    const calc = await page.textContent('.analysis-block');
+    check('Strategie-Engine: beste Aktion mit Erwartungswerten und Deck-Vergleich (Decks unbekannt)', /Beste Aktion: Ziehen/.test(calc) && /Vergleich Deckanzahl/.test(calc) && /Annahme/.test(calc));
+    check('Strategie-Engine ohne Überlauf', !(await overflow(page)));
+    // Export / Zurücksetzen / Import
+    await page.click('[data-action="tab"][data-tab="daten"]');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="export"]')]);
+    const exported = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
+    check('Academy: Export als Datei', exported.format === 'bjai-academy' && exported.sources.length === 1 && exported.claims.length === 4, `${exported.sources && exported.sources.length}/${exported.claims && exported.claims.length}`);
+    await page.click('[data-action="reset"]');
+    await page.click('[data-action="reset"]');
+    await page.waitForFunction(() => window.__bj.academy.sources.length === 0);
+    check('Academy: Zurücksetzen nur nach zweitem Tipp', true);
+    await page.setInputFiles('input[data-slot="file"]', { name: 'academy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
+    await page.waitForFunction(() => window.__bj.academy.claims.length === 4, null, { timeout: 5000 }).catch(() => {});
+    check('Academy: Import stellt die Daten wieder her', await page.evaluate(() => window.__bj.academy.claims.length === 4 && window.__bj.academy.sources.length === 1));
+    check('Academy: Daten & Server ohne Überlauf', !(await overflow(page)));
+    // Neustart: Daten bleiben
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    const keptA = await page.evaluate(async () => { await window.__bj.academy.ready(); return window.__bj.academy.claims.length; });
+    check('Academy: Wissen nach Neustart erhalten', keptA === 4, String(keptA));
+    // Offline: Academy und Strategie-Engine funktionieren ohne Netz
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10000 }).catch(() => {});
+    await ctx.setOffline(true);
+    await page.reload();
+    const offStart = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
+    await page.evaluate(() => window.__bj.navigate('akademie'));
+    await page.click('[data-action="tab"][data-tab="rechner"]');
+    await page.click('[data-action="calc"]');
+    const offCalc = await page.waitForSelector('.analysis-block', { timeout: 15000 }).then(() => true).catch(() => false);
+    check('Offline: App startet, Academy und Strategie-Engine rechnen ohne Netz', offStart && offCalc);
+    await ctx.setOffline(false);
+    // Kamera funktioniert weiterhin (Testkamera, iPad-Grösse) und „Erkennung melden“ speichert nur Kartenwerte
+    await page.evaluate(() => window.__bj.navigate('kamera'));
+    await page.click('[data-camera="start"]');
+    await page.waitForFunction(() => window.__bj.camera.state === 'active', null, { timeout: 8000 });
+    check('Phase 8: Kamera startet weiterhin (iPad-Grösse, Testkamera)', true);
+    const fb = await page.evaluate(async () => { const f = await window.__bj.academy.addFeedback({ kind: 'wrong-card', dealer: [{ rank: 'K', score: 0.7 }], hands: [] }); return Object.keys(f.dealer[0]).join(','); });
+    check('Kamera-Lernmodus: Meldung enthält nur Kartenwerte', fb === 'rank,score', fb);
+    check('Phase 8: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 14) Phase 8: Academy auf dem iPhone ohne Überlauf
+  {
+    const { ctx, page, errors } = await newPage(SIZES.iPhone);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    await page.evaluate(() => window.__bj.navigate('einstellungen'));
+    check('iPhone: Deckauswahl ohne Überlauf', !(await overflow(page)));
+    await page.evaluate(() => window.__bj.navigate('akademie'));
+    for (const t of ['videos', 'wissen', 'statistik', 'rechner', 'daten']) {
+      await page.click(`[data-action="tab"][data-tab="${t}"]`);
+      check(`iPhone Academy ${t}: ohne Überlauf`, !(await overflow(page)));
+    }
+    check('iPhone Academy: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 } catch (err) {

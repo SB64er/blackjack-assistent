@@ -191,6 +191,7 @@ export class YumekoView extends View {
         <button type="button" class="btn btn--secondary" data-action="knowledge-filter" data-filter="edit">Lerninformationen korrigieren</button>
       </div>
       <div class="yumeko-actions yumeko-actions--v2">
+        <button type="button" class="btn btn--yumeko" data-nav="akademie">◆ Yumeko Academy · YouTube-Lernen &amp; Wissen</button>
         <button type="button" class="btn btn--yumeko" data-nav="labor">Strategie-Labor</button>
         <button type="button" class="btn btn--secondary" data-nav="risiko">Echtgeld &amp; Risiko${this.ctx.bankroll && this.ctx.bankroll.config.enabled ? ' · aktiv' : ''}</button>
         <button type="button" class="btn btn--secondary" data-nav="chat">YUMEKO fragen (Chat)</button>
