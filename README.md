@@ -1,4 +1,4 @@
-# Blackjack Assistent – PWA (Phase 1–4, Version 0.4.0)
+# Blackjack Assistent – PWA (Phase 1–5, Version 0.5.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
 Alle Daten (Einstellungen, Kalibrierung) bleiben lokal auf dem Gerät.
@@ -20,9 +20,11 @@ js/camera/               CameraService – getUserMedia (Stufen-Fallback), Start
 js/calibration/          geometry (reine Mathematik), store (Speichern/Laden),
                          model (Zustand), editor (Rechtecke per Finger)
 js/test/                 Testmodus-Checkliste (7 Schritte)
-js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test
+js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor
 js/demo/                 Simulierte Spielzustände (Demo-Modus)
 js/game/hand.js          Kartenwerte, Soft/Hart/Paar/Blackjack
+js/strategy/             standard (Basisstrategie 4–8 Decks), engine (Entscheidung), profiles (Profilspeicher),
+                         ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie)
 js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich),
                          template-store (angelernte Muster + Zustimmung),
                          round-tracker (Glättung, neue Runde, gezogene Karte),
@@ -68,8 +70,10 @@ Karten bleiben dabei erhalten.
 ## Tests
 
 ```
-npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offline-Dateiliste
-npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright)
+npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offline-Dateiliste,
+                       # Strategie, Profile, Migration, Rechenmodell, Simulation, KI-Recherche
+npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright), inkl. Profile
+                       # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages)
 ```
 
 ## Voraussetzungen
@@ -123,3 +127,69 @@ Update-Suche beim Öffnen und alle 30 Minuten, nur eigene alte Caches werden gel
 
 Gespeicherte Daten (`bjassist.settings`, `bjassist.calibration`, `bjassist.templates`,
 `bjassist.testmode`) sind unverändert – nichts muss neu eingerichtet werden.
+
+## Phase 5 (Version 0.5.0) – Strategieprofile
+
+Erreichbar über das Profil-Schild in der Hauptansicht oder Einstellungen → Strategieprofile.
+
+**Profile.** Jedes Profil hat ID, Name, Beschreibung, Typ (Standard / Benutzerdefiniert / KI),
+eigene Regeln (oder „folgt den Tischregeln“), geänderte Zellen, Strategiedaten sowie Erstellungs-
+und Änderungsdatum. Anlegen, bearbeiten, umbenennen, duplizieren, löschen (zwei Tipps), aktivieren.
+Genau ein Profil ist aktiv; Wechsel wirkt sofort ohne Neuladen. Das aktive Profil lässt sich erst
+löschen, wenn ein anderes aktiv ist. Das Profil „Standard“ ist fest und nicht veränderbar.
+
+**Speicher.** `localStorage` → `bjassist.strategyProfiles`:
+`{ version: 1, rev, activeId, profiles: [...], invalid: [...] }`. Beim ersten Start mit Daten aus
+0.4.0 wird das Standardprofil angelegt; alle übrigen Daten bleiben unverändert. Ungültige Einträge
+werden nicht gelöscht, sondern unter `invalid` aufbewahrt. `rev` verhindert, dass ein anderer Tab
+Änderungen unbemerkt überschreibt. Ein neueres Speicherformat wird nur gelesen, nie überschrieben.
+
+**Strategie-Engine** (`js/strategy/engine.js`). Hart, Weich, Paare gegen Dealerkarte; Aktionen
+ZIEHEN, STEHEN, VERDOPPELN, SPLITTEN, AUFGEBEN (nur mit Regel „spätes Aufgeben“). Nicht erlaubte
+Aktionen werden ersetzt (z. B. Verdoppeln mit 3 Karten → Ziehen bzw. Stehen bei „Ds“, kein Teilen
+nach einem Split, kein Verdoppeln nach Split ohne DAS). Zellen ohne Profilwert → Standardstrategie.
+Mit dem Profil „Standard“ sind alle Empfehlungen identisch mit 0.4.0 (Test). Weicht ein Profil ab,
+zeigt die Hauptansicht „weicht von Standard ab“.
+
+Quelle der Standardstrategie: *Blackjack Basic Strategy Chart (4–8 Decks)*, Wizard of Odds,
+https://wizardofodds.com/games/blackjack/strategy/4-decks/ (abgerufen 2026-11-22).
+
+**Rechenmodell** (`ev.js`, Ergebnisart „berechnet“). Exakte Erwartungswerte pro Zelle mit unendlich
+vielen Decks, Dealer schaut bei Ass/10 nach Blackjack, ein Split (kein erneutes Teilen), geteilte
+Asse je eine Karte, Aufgeben = −0,5. Das Modell bestätigt die Standardtabelle bis auf zwei knappe
+Grenzfälle (Soft 13 gegen 5, Soft 15 gegen 4), die bei endlichen Decks zur Standardtabelle kippen.
+Alle Annahmen werden in der App angezeigt.
+
+**Simulation** (`simulate.js`, Ergebnisart „Simulation“). Endlicher Schuh, 75 % Penetration,
+Zufallsgenerator mulberry32 mit festem Startwert (20261122) → gleiche Eingabe = gleiches Ergebnis.
+Angezeigt werden Runden, Startwert, Erwartungswert und 95-%-Konfidenzintervall.
+
+**Analyse.** Erwartungswert des Profils, der Standardstrategie und des Modellbesten, Abweichungen zur
+Standardstrategie mit Kosten je Zelle, Regelabhängigkeit und Unsicherheit. Ergebnisse sind
+gekennzeichnet als *berechnet*, *Simulation*, *KI-Vorschlag* oder *Annahme (nicht überprüft)*.
+Es wird nie behauptet, eine Strategie sei optimal.
+
+**KI-Strategie.** Berechnet für die gewählten Regeln die Strategie mit dem Rechenmodell (offline) und
+speichert sie als eigenes Profil (Typ KI, violett markiert) mit Methode, Annahmen, Grenzen und
+Abweichungen. Gespeicherte Profile funktionieren offline.
+
+*Echte Online-Recherche* ist vorbereitet, aber **nicht eingerichtet** – und die App sagt das offen.
+Dafür ist ein eigener Server nötig (der API-Schlüssel gehört dorthin, nie in den Browsercode). Die App
+sendet erst, wenn eine HTTPS-Adresse eingetragen **und** ausdrücklich zugestimmt wurde, und nur die
+Tischregeln (keine Kamerabilder, keine Muster). Vorschläge werden mit dem Rechenmodell geprüft und
+nicht automatisch übernommen. Schnittstelle:
+
+```
+POST <eigene https-Adresse>   Content-Type: application/json
+{ "task": "blackjack-strategy-research", "schema": 1, "rules": {...}, "rulesText": "...", "app": "BJ.AI 0.5.0 (Phase 5)" }
+
+Antwort:
+{ "summary": "...",
+  "sources": [{ "title": "...", "url": "https://...", "retrievedAt": "2026-11-22", "excerpt": "..." }],
+  "approaches": ["..."],
+  "suggestions": [{ "key": "hard:16:10", "code": "Rh", "rationale": "..." }],
+  "model": "..." }
+```
+
+Antworten ohne Quellen (Titel, https-URL, Abrufdatum) werden abgelehnt. Kostenpflichtige Dienste
+werden nie automatisch aktiviert.

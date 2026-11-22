@@ -14,6 +14,9 @@ import { SettingsView } from './views/settings-view.js';
 import { CameraView } from './views/camera-view.js';
 import { TestView } from './views/test-view.js';
 import { LearnView } from './views/learn-view.js';
+import { ProfileStore } from './strategy/profiles.js';
+import { StrategyView } from './views/strategy-view.js';
+import { ProfileView } from './views/profile-view.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -23,15 +26,19 @@ const calibration = new CalibrationModel();
 const templates = new TemplateStore();
 const recognition = new RecognitionService({ camera, calibration, settings, templates });
 const test = new TestTracker({ camera, calibration });
+const profiles = new ProfileStore({ settings });
+const ui = { editProfileId: null }; // Zustand zwischen Ansichten (ohne URL-Änderung)
 
-const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, navigate };
+const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate };
 
 const ROUTES = {
   haupt: MainView,
   einstellungen: SettingsView,
   kamera: CameraView,
   test: TestView,
-  anlernen: LearnView
+  anlernen: LearnView,
+  strategie: StrategyView,
+  profil: ProfileView
 };
 
 const root = document.getElementById('app');

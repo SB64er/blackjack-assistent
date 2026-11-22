@@ -30,6 +30,7 @@ class Updates extends Emitter {
       return;
     }
     const reg = this.reg;
+    if (!reg) return;
     if (reg.waiting && navigator.serviceWorker.controller) this._setAvailable();
     reg.addEventListener('updatefound', () => {
       const sw = reg.installing;
