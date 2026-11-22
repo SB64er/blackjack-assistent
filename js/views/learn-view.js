@@ -80,7 +80,7 @@ export class LearnView extends View {
   // Momentaufnahme: gefundene Zeichen als vergrösserte Kacheln.
   _capture() {
     const { recognition } = this.ctx;
-    const order = { dealerUp: 0, player: 1, split: 2, dealerHole: 3 };
+    const order = { dealer: 0, player: 1, split: 2 };
     const items = boxesFromScan(recognition.latest, { includeUnknown: true })
       .filter((b) => b.tone !== 'ignored' && (b.tone !== 'none' || b.data.likelyRank))
       // Wahrscheinliche Rangzeichen zuerst (kleineres Farbsymbol direkt darunter).
@@ -161,9 +161,9 @@ export class LearnView extends View {
   _galleryHtml() {
     if (!this._snapshot) return '';
     if (!this._snapshot.length) {
-      return '<p class="hint hint--box">Keine Zeichen gefunden. Liegen Karten in den Bereichen A1/B? Ist die Kalibrierung richtig?</p>';
+      return '<p class="hint hint--box">Keine Zeichen gefunden. Liegen Karten in den Bereichen A/B? Ist die Kalibrierung richtig?</p>';
     }
-    const regionLabel = { dealerUp: 'A1', dealerHole: 'A2', player: 'B', split: 'C' };
+    const regionLabel = { dealer: 'A', player: 'B', split: 'C' };
     const tiles = this._snapshot.map((it, i) => {
       const label = it.assigned ? (it.assigned === IGNORE ? '–' : it.assigned) : (it.label || '?');
       const tone = it.assigned ? 'ok' : it.tone;
@@ -204,14 +204,14 @@ export class LearnView extends View {
       const blocker = recognition.blocker();
       if (blocker === RecognitionReason.CAMERA) panel.push(cameraButton(camera));
       else if (blocker === RecognitionReason.CALIBRATION || blocker === RecognitionReason.EDITING) {
-        panel.push(warningBanner({ title: 'Erst kalibrieren', message: 'Markiere zuerst die Bereiche A1, A2 und B und speichere die Kalibrierung.' }));
+        panel.push(warningBanner({ title: 'Erst kalibrieren', message: 'Markiere zuerst die Bereiche A (Dealer) und B (Spieler) und speichere die Kalibrierung.' }));
         panel.push('<button type="button" class="btn btn--primary" data-nav="kamera">Zur Kalibrierung</button>');
       } else if (blocker === RecognitionReason.ORIENTATION) {
         panel.push(warningBanner(compatMessage(calibration.compatibility(camera.dimensions()))));
       } else {
         panel.push(`
           <ol class="learn-steps">
-            <li>Spiele eine Runde, sodass Karten in den Bereichen A1 und B liegen.</li>
+            <li>Spiele eine Runde, sodass Karten in den Bereichen A und B liegen.</li>
             <li>Tippe auf <b>„Zeichen erfassen“</b>. Die gefundenen Zeichen erscheinen vergrössert.</li>
             <li>Tippe auf ein Zeichen und wähle den Wert. Wiederhole das mit weiteren Runden, bis alle 13 Werte grün sind.</li>
           </ol>

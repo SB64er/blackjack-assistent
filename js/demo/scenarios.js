@@ -10,8 +10,7 @@ export const RECOMMENDATIONS = {
   ZIEHEN:     { label: 'ZIEHEN',     spoken: 'Ziehen',     tone: 'hit' },
   STEHEN:     { label: 'STEHEN',     spoken: 'Stehen',     tone: 'stand' },
   VERDOPPELN: { label: 'VERDOPPELN', spoken: 'Verdoppeln', tone: 'double' },
-  SPLITTEN:   { label: 'SPLITTEN',   spoken: 'Splitten',   tone: 'split' },
-  AUFGEBEN:   { label: 'AUFGEBEN',   spoken: 'Aufgeben',   tone: 'surrender' }
+  SPLITTEN:   { label: 'SPLITTEN',   spoken: 'Splitten',   tone: 'split' }
 };
 
 export const DEMO_SCENARIOS = [
@@ -19,7 +18,7 @@ export const DEMO_SCENARIOS = [
   { id: 'ziehen',     dealerUp: card('9', '♠'),  player: [card('7', '♦'), card('5', '♥')],  handText: 'Harte 12 gegen 9',  recommendation: 'ZIEHEN' },
   { id: 'verdoppeln', dealerUp: card('5', '♥'),  player: [card('6', '♦'), card('5', '♣')],  handText: 'Harte 11 gegen 5',  recommendation: 'VERDOPPELN' },
   { id: 'splitten',   dealerUp: card('6', '♣'),  player: [card('8', '♥'), card('8', '♠')],  handText: 'Paar 8 gegen 6',    recommendation: 'SPLITTEN' },
-  { id: 'aufgeben',   dealerUp: card('10', '♦'), player: [card('9', '♠'), card('7', '♥')],  handText: 'Harte 16 gegen 10', recommendation: 'AUFGEBEN' },
+  { id: 'harte16',    dealerUp: card('10', '♦'), player: [card('9', '♠'), card('7', '♥')],  handText: 'Harte 16 gegen 10', recommendation: 'ZIEHEN' },
   { id: 'soft',       dealerUp: card('3', '♣'),  player: [card('A', '♠'), card('7', '♦'), card('2', '♥')], handText: 'Soft 20 gegen 3', recommendation: 'STEHEN' },
   { id: 'unsicher',   dealerUp: card('7', '♥'),  player: [unknown(), card('9', '♦')],       handText: '',                  recommendation: null }
 ];

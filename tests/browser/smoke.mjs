@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.5.0 angezeigt`, (await page.textContent('.footnote')).includes('0.5.0'));
+    check(`${name}: Version 0.6.0 angezeigt`, (await page.textContent('.footnote')).includes('0.6.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -124,6 +124,9 @@ try {
     await page.goto(BASE);
     const s = await page.evaluate(() => ({
       cal: !!window.__bj.calibration.saved,
+      calV: window.__bj.calibration.saved && window.__bj.calibration.saved.version,
+      dealer: window.__bj.calibration.saved && window.__bj.calibration.saved.regions.dealer,
+      backup: !!localStorage.getItem('bjassist.calibration.v1backup'),
       tpl: window.__bj.templates.items.length,
       consent: window.__bj.templates.consent,
       decks: window.__bj.settings.get('rules.decks'),
@@ -131,6 +134,7 @@ try {
       fps: window.__bj.settings.get('camera.fps')
     }));
     check('Daten: Kalibrierung geladen', s.cal);
+    check('Migration: zwei Dealer-Felder -> ein Dealer-Feld (mit Sicherung)', s.calV === 2 && !!s.dealer && Math.abs(s.dealer.x - 0.38) < 1e-6 && Math.abs(s.dealer.x + s.dealer.w - 0.6) < 1e-6 && s.backup, JSON.stringify(s.dealer));
     check('Daten: angelernte Muster + Zustimmung geladen', s.tpl === 1 && s.consent);
     check('Daten: Einstellungen unverändert', s.decks === 8 && s.mode === 'automatisch' && s.fps === 15);
     await ctx.close();
@@ -146,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.5.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.6.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -212,7 +216,7 @@ try {
     await page.reload();
     await page.waitForSelector('.screen-main');
     const after = await page.evaluate(() => ({ n: window.__bj.profiles.list().length, active: window.__bj.profiles.active.name }));
-    check('Profile: nach Neuladen wiederhergestellt', after.n === 2 && after.active === 'Testprofil', JSON.stringify(after));
+    check('Profile: nach Neuladen wiederhergestellt', after.n === 3 && after.active === 'Testprofil', JSON.stringify(after));
     // Aktives Profil kann nicht gelöscht werden
     await page.click('.profile-tag');
     await page.waitForSelector('.profile-card');
@@ -220,13 +224,14 @@ try {
     check('Profile: aktives Profil hat keinen Löschen-Knopf', (await activeCard.locator('[data-action="delete"]').count()) === 0);
     check('Profile: aktives Profil klar markiert', (await activeCard.textContent()).includes('AKTIV'));
     // Standard aktivieren, dann Testprofil löschen (zwei Tipps)
-    await page.click('.profile-card:not(.is-active) [data-action="activate"]');
-    await page.click('.profile-card:not(.is-active) [data-action="delete"]');
+    await page.locator('.profile-card', { hasText: 'Standardstrategie' }).first().locator('[data-action="activate"]').click();
+    const testCard = () => page.locator('.profile-card', { hasText: 'Testprofil' }).locator('[data-action="delete"]');
+    await testCard().click();
     const stillThere = await page.evaluate(() => window.__bj.profiles.list().length);
-    check('Profile: Löschen braucht Bestätigung', stillThere === 2);
-    await page.click('.profile-card:not(.is-active) [data-action="delete"]');
+    check('Profile: Löschen braucht Bestätigung', stillThere === 3, String(stillThere));
+    await testCard().click();
     const left = await page.evaluate(() => window.__bj.profiles.list().map((p) => p.id));
-    check('Profile: nach Bestätigung gelöscht', left.length === 1 && left[0] === 'standard', left.join(','));
+    check('Profile: nach Bestätigung gelöscht', left.length === 2 && left[0] === 'standard' && left[1] === 'yumeko', left.join(','));
     // KI-Strategie ohne Server: berechnet lokal, zeigt offen "nicht eingerichtet"
     await page.click('[data-action="ai"]');
     await page.waitForSelector('[data-action="ai-run"]');
@@ -254,7 +259,7 @@ try {
     await page.goto(BASE);
     await page.waitForSelector('.screen-main');
     const m = await page.evaluate(() => ({ active: window.__bj.profiles.activeId, n: window.__bj.profiles.list().length, s17: window.__bj.settings.get('rules.soft17'), mode: window.__bj.settings.get('roundMode') }));
-    check('Migration 0.4.0: Standardprofil aktiv, Einstellungen unverändert', m.active === 'standard' && m.n === 1 && m.s17 === 'zieht' && m.mode === 'manuell', JSON.stringify(m));
+    check('Migration 0.4.0: Standardprofil aktiv, Einstellungen unverändert', m.active === 'standard' && m.n === 2 && m.s17 === 'zieht' && m.mode === 'manuell', JSON.stringify(m));
     // Ohne Aufgeben-Regel: 16 gegen 10 = Ziehen statt Aufgeben
     await page.evaluate(() => { for (let i = 0; i < 4; i++) document.querySelector('[data-action="next-demo"]').click(); });
     check('Regeln: ohne Aufgeben wird 16 gegen 10 zu ZIEHEN', (await page.textContent('.rec-word')).trim() === 'ZIEHEN');
@@ -282,6 +287,116 @@ try {
     await ctx.setOffline(false);
     check('GitHub Pages: keine Anfragen ausserhalb des Unterpfads', outside.length === 0, outside.join(', '));
     check('GitHub Pages: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  // 10) Phase 6: Live-Runde -> Archiv -> Korrektur -> YUMEKO lernt -> Strategieversion
+  {
+    const { ctx, page, errors } = await newPage(SIZES['iPad quer'], () => {
+      if (sessionStorage.getItem('seeded6')) return;
+      sessionStorage.setItem('seeded6', '1');
+      localStorage.setItem('bjassist.settings', JSON.stringify({ roundMode: 'automatisch', demo: false }));
+    });
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    await page.evaluate(() => window.__bj.archive.ready());
+    // Erkennung simulieren (gleiche Daten wie aus dem Kamerabild): 16 gegen 7 – gestanden
+    const ran = await page.evaluate(() => {
+      const rec = window.__bj.recognition;
+      const d = (rank, x, y = 0.2) => ({ rank, score: 0.95, confident: true, box: { x, y, w: 0.02, h: 0.04 } });
+      const raw = (dealer, player, split = []) => ({ dealer, player, split, unsure: false, cardFaceWithoutRank: false });
+      let t = 1000;
+      const feed = (r, n = 4) => { for (let i = 0; i < n; i++) { t += 250; rec.ingest(r, t); } };
+      feed(raw([d('7', 0.4)], [d('10', 0.3, 0.7), d('6', 0.35, 0.7)]));
+      const beforeHole = rec.round.snapshot();
+      feed(raw([d('7', 0.4), d('10', 0.45)], [d('10', 0.3, 0.7), d('6', 0.35, 0.7)]));
+      feed(raw([], []), 2);           // kurz nichts sichtbar
+      feed(raw([d('7', 0.4), d('10', 0.45)], [d('10', 0.3, 0.7), d('6', 0.35, 0.7)]));
+      const sameRound = rec.round && rec.round.snapshot().dealer.length === 2;
+      feed(raw([], []), 30);          // Tisch lange leer -> Runde endet
+      return { holeUnknown: !beforeHole.holeKnown && beforeHole.dealer.length === 1, sameRound, open: !!rec.round };
+    });
+    check('Live: verdeckte Dealerkarte zunächst unbekannt', ran.holeUnknown);
+    check('Live: kurze Lücke ohne Karten = gleiche Runde', ran.sameRound);
+    const saved = await page.waitForFunction(() => window.__bj.archive.rounds.length === 1, null, { timeout: 5000 }).then(() => true).catch(() => false);
+    check('Archiv: abgeschlossene Runde automatisch gespeichert', saved);
+    const rec0 = await page.evaluate(() => window.__bj.archive.rounds[0]);
+    check('Archiv: Ergebnis Verloren (16 gegen 17), Aktion Stehen erfasst', rec0 && rec0.hands[0].outcome === 'loss' && rec0.hands[0].actions.some((a) => a.action === 'STAND'), JSON.stringify(rec0 && rec0.hands[0]));
+    // Archiv-Ansicht: anzeigen, öffnen, Karte korrigieren
+    await page.evaluate(() => window.__bj.navigate('archiv'));
+    await page.waitForSelector('.round-row');
+    check('Archiv: Runde in der Liste', (await page.locator('.round-row').count()) === 1);
+    check('Archiv: ohne Überlauf', !(await overflow(page)));
+    await page.click('.round-row');
+    await page.waitForSelector('.mini-card');
+    await page.click('[data-action="card"][data-where="dealer"][data-index="1"]');
+    await page.click('[data-action="pick-rank"][data-rank="A"]');
+    const corrected = await page.waitForFunction(() => { const r = window.__bj.archive.rounds[0]; return r.dealer.cards[1].rank === 'A' && r.confirmation === 'manual'; }, null, { timeout: 3000 }).then(() => true).catch(() => false);
+    check('Archiv: Karte korrigiert und als manuell bestätigt markiert', corrected);
+    const rec1 = await page.evaluate(() => window.__bj.archive.rounds[0]);
+    check('Archiv: Werte nach Korrektur neu berechnet (Dealer 7+A = 18, 16 verliert)', rec1.dealer.total === 18 && rec1.hands[0].outcome === 'loss' && rec1.status !== 'incomplete', JSON.stringify({ d: rec1.dealer.total, o: rec1.hands[0].outcome, s: rec1.status }));
+    // Export enthält Runden und YUMEKO-Wissen
+    const exp = await page.evaluate(async () => { const d = await window.__bj.archive.exportData({ yumeko: window.__bj.knowledge.exportData() }); return { n: d.rounds.length, k: d.yumeko.knowledge.length }; });
+    check('Archiv: JSON-Export mit Runden und Wissen', exp.n === 1 && exp.k >= 1, JSON.stringify(exp));
+    // YUMEKO: analysieren, Entwurf, prüfen, bestätigen
+    await page.evaluate(() => window.__bj.navigate('yumeko'));
+    await page.waitForSelector('[data-action="analyze"]');
+    await page.click('[data-action="analyze"]');
+    await page.waitForSelector('.luck-grid', { timeout: 5000 });
+    const k = await page.evaluate(() => window.__bj.knowledge.items.filter((i) => i.category === 'verified' && i.id.includes('hard:16:7')).length);
+    check('YUMEKO: Fehler (Stehen bei 16 gegen 7) als geprüfte Erkenntnis gespeichert', k === 1);
+    await page.click('[data-action="draft"]');
+    await page.waitForSelector('[data-action="verify"]');
+    await page.click('[data-action="verify"]');
+    await page.waitForSelector('[data-action="confirm"]', { timeout: 10000 });
+    await page.click('[data-action="confirm"]');
+    await page.click('[data-action="confirm"]');
+    const v = await page.waitForFunction(() => window.__bj.profiles.get('yumeko').data.strategyVersion === 1, null, { timeout: 5000 }).then(() => true).catch(() => false);
+    check('YUMEKO: Strategieversion erst nach Prüfung und Bestätigung aktiv', v);
+    await page.click('[data-action="activate"]');
+    check('YUMEKO: als einziges Profil aktiv', await page.evaluate(() => window.__bj.profiles.activeId === 'yumeko' && window.__bj.profiles.list().filter((p) => p.id === window.__bj.profiles.activeId).length === 1));
+    check('YUMEKO: Lernzentrum ohne Überlauf', !(await overflow(page)));
+    // Wissen bleibt nach Neustart erhalten
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    const persisted = await page.evaluate(async () => { await window.__bj.knowledge.ready(); await window.__bj.archive.ready(); return { k: window.__bj.knowledge.items.length, r: window.__bj.archive.rounds.length, v: window.__bj.knowledge.versions.length }; });
+    check('YUMEKO: Wissen, Archiv und Versionen nach Neustart erhalten', persisted.k > 2 && persisted.r === 1 && persisted.v === 1, JSON.stringify(persisted));
+    // Demo mit YUMEKO: Empfehlung mit Begründung, nie Aufgeben
+    await page.evaluate(() => window.__bj.settings.set('demo', true));
+    await page.waitForSelector('.rec-word');
+    let sawSurrender = false;
+    for (let i = 0; i < 7; i++) {
+      const w = await page.evaluate(() => (document.querySelector('.rec-word') || {}).textContent || '');
+      if (/AUFGEBEN/.test(w)) sawSurrender = true;
+      await page.evaluate(() => document.querySelector('[data-action="next-demo"]').click());
+    }
+    check('Aufgeben erscheint nirgends in den Empfehlungen', !sawSurrender);
+    // Video lernen: Live-Erkennung pausiert, Hinweise "Noch nicht verfügbar"
+    await page.evaluate(() => window.__bj.navigate('video'));
+    await page.waitForSelector('.feature-list');
+    check('Video: Live-Spielerkennung pausiert', await page.evaluate(() => window.__bj.recognition.pausedFor === 'video'));
+    check('Video: nicht unterstützte Funktionen klar markiert', (await page.locator('.feature-list .is-missing').count()) === 3);
+    await page.evaluate(() => window.__bj.navigate('haupt'));
+    check('Video: Erkennung nach Verlassen wieder aktiv', await page.evaluate(() => !window.__bj.recognition.pausedFor));
+    for (const v2 of ['wissen', 'einstellungen', 'video']) {
+      await page.evaluate((n) => window.__bj.navigate(n), v2);
+      await page.waitForTimeout(200);
+      check(`Ansicht ${v2}: ohne Überlauf`, !(await overflow(page)));
+    }
+    check('Phase 6: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 11) iPhone-Breite: neue Ansichten ohne Überlauf
+  {
+    const { ctx, page, errors } = await newPage(SIZES.iPhone);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    for (const v3 of ['archiv', 'yumeko', 'wissen', 'video']) {
+      await page.evaluate((n) => window.__bj.navigate(n), v3);
+      await page.waitForTimeout(200);
+      check(`iPhone ${v3}: ohne Überlauf`, !(await overflow(page)));
+    }
+    check('iPhone: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 } catch (err) {

@@ -1,11 +1,11 @@
 // Strategieprofile: lokal gespeichert (localStorage "bjassist.strategyProfiles").
 //
-// Format (Version 1):
+// Format (Version 2, ab App 0.6.0; Version 1 = App 0.5.0 wird automatisch übernommen):
 // {
-//   version: 1, rev: <Zähler gegen ungewolltes Überschreiben>,
+//   version: 2, rev: <Zähler gegen ungewolltes Überschreiben>,
 //   activeId: '<id>',
-//   profiles: [{ id, name, description, type: 'standard'|'custom'|'ai',
-//                rules: {decks, soft17, das, surrender, payout},
+//   profiles: [{ id, name, description, type: 'standard'|'custom'|'ai'|'yumeko',
+//                rules: {decks, soft17, das, payout},
 //                settings: { followTableRules: bool },
 //                overrides: { 'hard:16:10': 'S', … },   // Abweichungen zur Standardtabelle
 //                data: { … gespeicherte Strategie-/Analyse-/Recherchedaten … },
@@ -17,18 +17,24 @@
 // - Immer genau ein aktives Profil; die aktive ID wird dauerhaft gespeichert.
 // - Das Profil "Standardstrategie" ist eingebaut, unveränderlich und nicht löschbar
 //   (sicherer Rückfall). Duplizieren ist möglich.
+// - Das Profil "YUMEKO AI" ist ebenfalls eingebaut und nicht löschbar. Seine Tabelle
+//   ändert sich nur über geprüfte und vom Benutzer bestätigte Strategieversionen.
 // - Das aktive Profil kann erst gelöscht werden, wenn ein anderes aktiv ist.
+// - Migration 1 -> 2: Aufgeben-Codes (Rh/Rs/Rp) werden in die Aktion ohne Aufgeben
+//   übersetzt; die alten Werte bleiben in data.legacySurrender nachvollziehbar.
 // - Ungültige gespeicherte Einträge werden nie gelöscht, sondern beiseitegelegt.
 // - Vor jedem Speichern wird geprüft, ob ein anderes Fenster inzwischen gespeichert hat.
 import { Emitter } from '../core/events.js';
 import { load, save } from '../core/store.js';
-import { normalizeRules, parseKey, CODES_BY_KIND, rulesEqual } from './standard.js';
+import { normalizeRules, parseKey, CODES_BY_KIND, rulesEqual, modernCode } from './standard.js';
 
 export const PROFILES_KEY = 'strategyProfiles';
-export const PROFILES_VERSION = 1;
+export const PROFILES_VERSION = 2;
 export const STANDARD_ID = 'standard';
-export const PROFILE_TYPES = ['standard', 'custom', 'ai'];
-export const TYPE_LABEL = { standard: 'Standard', custom: 'Benutzerdefiniert', ai: 'KI-Strategie' };
+export const YUMEKO_ID = 'yumeko';
+export const PROFILE_TYPES = ['standard', 'custom', 'ai', 'yumeko'];
+export const TYPE_LABEL = { standard: 'Standard', custom: 'Benutzerdefiniert', ai: 'KI-Strategie', yumeko: 'YUMEKO AI' };
+const BUILTIN = new Set([STANDARD_ID, YUMEKO_ID]);
 const MAX_NAME = 60;
 const MAX_DESC = 500;
 
@@ -62,6 +68,23 @@ export function standardProfile(tableRules, at = nowIso()) {
   };
 }
 
+export function yumekoProfile(tableRules, at = nowIso(), stored = null) {
+  const data = stored && stored.data && typeof stored.data === 'object' ? stored.data : {};
+  return {
+    id: YUMEKO_ID,
+    name: 'YUMEKO AI',
+    description: 'Adaptive Blackjack Intelligence.',
+    type: 'yumeko',
+    rules: normalizeRules(tableRules),
+    settings: { followTableRules: true },
+    // Tabelle der aktivierten Strategieversion (anfangs leer = Standardstrategie).
+    overrides: stored ? { ...stored.overrides } : {},
+    data: { strategyVersion: 0, versionId: null, ...data },
+    createdAt: at,
+    updatedAt: stored && stored.updatedAt ? stored.updatedAt : at
+  };
+}
+
 function cleanText(s, max) {
   return String(s ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
 }
@@ -78,13 +101,19 @@ export function validateProfile(p) {
   const name = cleanText(p.name, MAX_NAME);
   if (!name) return null;
   const overrides = {};
+  const legacy = {};
   if (p.overrides && typeof p.overrides === 'object') {
     for (const [k, v] of Object.entries(p.overrides)) {
       const key = parseKey(k);
-      if (key && CODES_BY_KIND[key.kind].includes(v)) overrides[k] = v;
+      if (!key) continue;
+      const code = modernCode(v);
+      if (code !== v) legacy[k] = v; // Aufgeben aus 0.5.0 -> nachvollziehbar aufbewahren
+      if (CODES_BY_KIND[key.kind].includes(code)) overrides[k] = code;
     }
   }
   const at = isIso(p.createdAt) ? p.createdAt : nowIso();
+  const data = p.data && typeof p.data === 'object' && !Array.isArray(p.data) ? { ...p.data } : {};
+  if (Object.keys(legacy).length) data.legacySurrender = { ...(data.legacySurrender || {}), ...legacy };
   return {
     id: p.id,
     name,
@@ -93,7 +122,7 @@ export function validateProfile(p) {
     rules: normalizeRules(p.rules),
     settings: { followTableRules: !!(p.settings && p.settings.followTableRules) },
     overrides,
-    data: p.data && typeof p.data === 'object' && !Array.isArray(p.data) ? p.data : {},
+    data,
     createdAt: at,
     updatedAt: isIso(p.updatedAt) ? p.updatedAt : at
   };
@@ -115,6 +144,7 @@ export function migrate(raw, tableRules) {
       throw new ProfileError('newer-format', 'Die Strategieprofile stammen aus einer neueren App-Version.');
     }
     out.rev = Number.isInteger(raw.rev) ? raw.rev : 0;
+    if (raw.version !== PROFILES_VERSION) out.migratedFrom = raw.version === 1 ? '0.5.0' : 'unbekannt';
     if (Array.isArray(raw.invalid)) out.invalid.push(...raw.invalid);
     const seen = new Set();
     for (const p of Array.isArray(raw.profiles) ? raw.profiles : []) {
@@ -130,6 +160,16 @@ export function migrate(raw, tableRules) {
   const std = standardProfile(tableRules, idx >= 0 ? out.profiles[idx].createdAt : undefined);
   if (idx >= 0) out.profiles[idx] = std;
   else out.profiles.unshift(std);
+  // YUMEKO AI immer vorhanden (direkt nach Standard); gelernte Tabelle bleibt erhalten.
+  const yi = out.profiles.findIndex((p) => p.id === YUMEKO_ID);
+  const yStored = yi >= 0 && out.profiles[yi].type === 'yumeko' ? out.profiles[yi] : null;
+  if (yi >= 0 && !yStored) {
+    // Fremdes Profil mit derselben ID (sehr unwahrscheinlich): unter neuer ID behalten.
+    out.profiles[yi] = { ...out.profiles[yi], id: newId() };
+  }
+  const yum = yumekoProfile(tableRules, yStored ? yStored.createdAt : undefined, yStored);
+  if (yStored) out.profiles[yi] = yum;
+  else { out.profiles.splice(1, 0, yum); if (!out.migratedFrom) out.migratedFrom = 'ohne-yumeko'; }
   if (!out.profiles.some((p) => p.id === out.activeId)) out.activeId = STANDARD_ID;
   return out;
 }
@@ -159,6 +199,7 @@ export class ProfileStore extends Emitter {
     settings.on('change', ({ path }) => {
       if (path.startsWith('rules')) {
         this.get(STANDARD_ID).rules = normalizeRules(settings.get('rules'));
+        this.get(YUMEKO_ID).rules = normalizeRules(settings.get('rules'));
         this.emit('change', { type: 'rules' });
       }
     });
@@ -248,11 +289,35 @@ export class ProfileStore extends Emitter {
     const p = this.get(id);
     if (!p) throw new ProfileError('not-found', 'Profil nicht gefunden.');
     if (p.type === 'standard') throw new ProfileError('locked', 'Die eingebaute Standardstrategie kann nicht verändert werden. Dupliziere sie, um eine eigene Version zu erstellen.');
+    if (p.type === 'yumeko') throw new ProfileError('locked', 'YUMEKO AI wird nur über geprüfte Strategieversionen im Lernzentrum verändert. Dupliziere das Profil, um es frei zu bearbeiten.');
     return p;
   }
 
+  /**
+   * Geprüfte und vom Benutzer bestätigte Strategieversion für YUMEKO übernehmen.
+   * version: { id, number, overrides, verification } – wird vom Lernzentrum erzeugt.
+   */
+  applyYumekoVersion(version) {
+    if (!version || !version.id || !Number.isInteger(version.number)) throw new ProfileError('invalid-version', 'Ungültige Strategieversion.');
+    if (!version.verification || !version.verification.ok) throw new ProfileError('unverified', 'Die Strategieversion ist nicht mathematisch geprüft.');
+    if (!version.confirmedAt) throw new ProfileError('unconfirmed', 'Die Strategieversion wurde nicht bestätigt.');
+    return this._commit('update', () => {
+      const p = this.get(YUMEKO_ID);
+      const overrides = {};
+      for (const [k, v] of Object.entries(version.overrides || {})) {
+        const key = parseKey(k);
+        const code = modernCode(v);
+        if (key && CODES_BY_KIND[key.kind].includes(code)) overrides[k] = code;
+      }
+      p.overrides = overrides;
+      p.data = { ...p.data, strategyVersion: version.number, versionId: version.id, appliedAt: nowIso() };
+      p.updatedAt = nowIso();
+      return p;
+    });
+  }
+
   create({ name, description = '', type = 'custom', rules = null, overrides = {}, data = {}, followTableRules = false, activate = false } = {}) {
-    if (type === 'standard') throw new ProfileError('locked', 'Es gibt nur eine eingebaute Standardstrategie.');
+    if (type === 'standard' || type === 'yumeko') throw new ProfileError('locked', 'Dieses Profil ist eingebaut und existiert nur einmal.');
     return this._commit('create', () => {
       const at = nowIso();
       const p = validateProfile({
@@ -321,9 +386,9 @@ export class ProfileStore extends Emitter {
     return this.create({
       name: name || `${src.name} (Kopie)`,
       description: src.description,
-      type: src.type === 'standard' ? 'custom' : src.type,
+      type: BUILTIN.has(src.id) ? 'custom' : src.type,
       rules: src.settings.followTableRules ? this._tableRules() : src.rules,
-      followTableRules: src.type === 'standard' ? true : src.settings.followTableRules,
+      followTableRules: BUILTIN.has(src.id) ? true : src.settings.followTableRules,
       overrides: { ...src.overrides },
       data: JSON.parse(JSON.stringify(src.data || {}))
     });
@@ -342,6 +407,7 @@ export class ProfileStore extends Emitter {
     const p = this.get(id);
     if (!p) throw new ProfileError('not-found', 'Profil nicht gefunden.');
     if (p.type === 'standard') throw new ProfileError('locked', 'Die eingebaute Standardstrategie kann nicht gelöscht werden.');
+    if (p.type === 'yumeko') throw new ProfileError('locked', 'YUMEKO AI ist eingebaut und kann nicht gelöscht werden. Gelerntes Wissen lässt sich im Lernzentrum korrigieren oder löschen.');
     if (id === this.state.activeId) throw new ProfileError('active', 'Das aktive Profil kann nicht gelöscht werden. Aktiviere zuerst ein anderes Profil.');
     return this._commit('remove', () => {
       this.state.profiles = this.state.profiles.filter((x) => x.id !== id);

@@ -5,16 +5,18 @@
 // - Fehlt eine Profilzelle oder ist sie ungültig: Rückfall auf die Standardstrategie
 // Reine Logik (ohne DOM) -> testbar.
 import { rankValue } from '../game/hand.js';
-import { standardCode, cellKey, CODES_BY_KIND, normalizeRules } from './standard.js';
+import { standardCode, cellKey, CODES_BY_KIND, normalizeRules, modernCode } from './standard.js';
 
+// Ab 0.6.0 ohne Aufgeben (Surrender).
 export const ACTIONS = Object.freeze({
-  HIT: 'HIT', STAND: 'STAND', DOUBLE: 'DOUBLE', SPLIT: 'SPLIT', SURRENDER: 'SURRENDER'
+  HIT: 'HIT', STAND: 'STAND', DOUBLE: 'DOUBLE', SPLIT: 'SPLIT'
 });
 
 // Anzeige (Schlüssel wie in demo/scenarios.js RECOMMENDATIONS)
 export const ACTION_TO_RECOMMENDATION = {
-  HIT: 'ZIEHEN', STAND: 'STEHEN', DOUBLE: 'VERDOPPELN', SPLIT: 'SPLITTEN', SURRENDER: 'AUFGEBEN'
+  HIT: 'ZIEHEN', STAND: 'STEHEN', DOUBLE: 'VERDOPPELN', SPLIT: 'SPLITTEN'
 };
+export const ACTION_LABEL = { HIT: 'Ziehen', STAND: 'Stehen', DOUBLE: 'Verdoppeln', SPLIT: 'Splitten' };
 
 /** Hand einordnen: hart/weich/Paar, Gesamtwert. cards: [{rank}] */
 export function classify(cards) {
@@ -37,7 +39,7 @@ export function upValue(card) {
 export function cellCode(kind, value, up, { rules, overrides = null } = {}) {
   const key = cellKey(kind, value, up);
   const std = standardCode(kind, value, up, rules);
-  const own = overrides && overrides[key];
+  const own = overrides && overrides[key] != null ? modernCode(overrides[key]) : null;
   if (own != null) {
     if (CODES_BY_KIND[kind].includes(own)) return { code: own, source: 'profile', key, standard: std };
     return { code: std, source: 'fallback', key, standard: std, invalid: own };
@@ -47,7 +49,8 @@ export function cellCode(kind, value, up, { rules, overrides = null } = {}) {
 
 /**
  * Code in eine erlaubte Aktion auflösen.
- * allowed: { double, split, surrender, das }
+ * allowed: { double, split, das }
+ * Alte Codes mit Aufgeben (Rh/Rs/Rp aus 0.5.0) werden ohne Aufgeben aufgelöst.
  * Gibt null zurück, wenn die Zelle "wie Gesamtwert ohne Split" behandelt werden muss.
  */
 export function resolveCode(code, allowed) {
@@ -58,9 +61,9 @@ export function resolveCode(code, allowed) {
     case 'Ds': return allowed.double ? ACTIONS.DOUBLE : ACTIONS.STAND;
     case 'P': return allowed.split ? ACTIONS.SPLIT : null;
     case 'Ph': return allowed.split && allowed.das ? ACTIONS.SPLIT : null;
-    case 'Rh': return allowed.surrender ? ACTIONS.SURRENDER : ACTIONS.HIT;
-    case 'Rs': return allowed.surrender ? ACTIONS.SURRENDER : ACTIONS.STAND;
-    case 'Rp': return allowed.surrender ? ACTIONS.SURRENDER : (allowed.split ? ACTIONS.SPLIT : null);
+    case 'Rh': return ACTIONS.HIT;
+    case 'Rs': return ACTIONS.STAND;
+    case 'Rp': return allowed.split ? ACTIONS.SPLIT : null;
     default: return null;
   }
 }
@@ -93,7 +96,6 @@ export function decide(cards, dealerUp, opts = {}) {
   const allowed = {
     double: two && (!afterSplit || rules.das),
     split: info.pair && !afterSplit,               // erneutes Splitten wird nicht empfohlen
-    surrender: two && !afterSplit && rules.surrender === 'spaet',
     das: rules.das
   };
 

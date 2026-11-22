@@ -10,7 +10,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     decks: 6,
     soft17: 'steht',           // 'steht' | 'zieht'
     das: true,                 // Verdoppeln nach Split
-    surrender: 'spaet',        // 'spaet' | 'keine'
+    // surrender (Aufgeben) gibt es ab 0.6.0 nicht mehr; ein alter Wert bleibt
+    // im Speicher unberührt, wird aber nicht mehr verwendet.
     payout: '3:2'              // '3:2' | '6:5'
   },
   camera: {

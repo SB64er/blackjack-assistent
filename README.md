@@ -1,7 +1,7 @@
-# Blackjack Assistent – PWA (Phase 1–5, Version 0.5.0)
+# Blackjack Assistent – PWA (Phase 1–6, Version 0.6.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
-Alle Daten (Einstellungen, Kalibrierung) bleiben lokal auf dem Gerät.
+Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen) bleiben lokal auf dem Gerät.
 
 ## Struktur
 
@@ -12,7 +12,7 @@ sw.js                    Service Worker (offline; speichert nur App-Dateien)
 icons/                   App-Symbole (180, 192, 512, maskable)
 css/app.css              Design (dunkel, minimalistisch)
 js/app.js                Einstieg + Navigation OHNE URL-Änderung (data-nav), Kamera-Start per Tipp
-js/core/                 Speicher, Ereignisse, Einstellungen, DOM-Hilfen,
+js/core/                 Speicher, Ereignisse, Einstellungen, DOM-Hilfen, idb (IndexedDB + Ersatzspeicher),
                          display (Home-Bildschirm-App, Vollbild), updates (Service Worker, Update-Hinweis)
 js/camera/               CameraService – getUserMedia (Stufen-Fallback), Start/Stopp, Fehler,
                          Frame-Wächter mit Selbstreparatur, Fortsetzen, Dock, Wake-Lock;
@@ -20,9 +20,14 @@ js/camera/               CameraService – getUserMedia (Stufen-Fallback), Start
 js/calibration/          geometry (reine Mathematik), store (Speichern/Laden),
                          model (Zustand), editor (Rechtecke per Finger)
 js/test/                 Testmodus-Checkliste (7 Schritte)
-js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor
+js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor,
+                         Spielarchiv, Runde, YUMEKO-Lernzentrum, Wissen, Video lernen
 js/demo/                 Simulierte Spielzustände (Demo-Modus)
-js/game/hand.js          Kartenwerte, Soft/Hart/Paar/Blackjack
+js/game/                 hand (Kartenwerte), card-tracker (Mehrfachbestätigung, keine Doppelzählung),
+                         round-state (Live-Runde, verdeckte Karte, Split, Rundenende), settle (Ergebnis W/L/Push)
+js/archive/              round-record (Datensatz, Prüfung, Filter), archive-store (IndexedDB, Export/Import)
+js/yumeko/               knowledge (Wissensspeicher), archive-analysis (Analyse), yumeko (Versionen, Prüfung),
+                         video-learner (Szenenwechsel, Video-Lernsequenzen)
 js/strategy/             standard (Basisstrategie 4–8 Decks), engine (Entscheidung), profiles (Profilspeicher),
                          ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie)
 js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich),
@@ -39,12 +44,11 @@ Gespeichert in `localStorage` unter `bjassist.calibration`:
 
 ```json
 {
-  "version": 1,
-  "savedAt": "2026-11-21T22:18:39Z",
+  "version": 2,
+  "savedAt": "2026-11-22T22:18:39Z",
   "frame": { "width": 1920, "height": 1080, "aspect": 1.778, "orientation": "landscape" },
   "regions": {
-    "dealerUp":   { "x": 0.38, "y": 0.12, "w": 0.10, "h": 0.22 },
-    "dealerHole": { "x": 0.50, "y": 0.12, "w": 0.10, "h": 0.22 },
+    "dealer":     { "x": 0.38, "y": 0.12, "w": 0.22, "h": 0.22 },
     "player":     { "x": 0.28, "y": 0.56, "w": 0.34, "h": 0.28 },
     "split":      { "x": 0.64, "y": 0.56, "w": 0.30, "h": 0.28 }
   },
@@ -55,6 +59,11 @@ Gespeichert in `localStorage` unter `bjassist.calibration`:
 Koordinaten sind relativ (0–1) zum echten Kamerabild, nicht zum Bildschirm.
 Passen Ausrichtung oder Seitenverhältnis des aktuellen Bildes nicht zur Kalibrierung,
 wird sie pausiert (gelbe Warnung), aber nie verändert.
+
+Seit Phase 6 gibt es **ein** Dealer-Feld (A). Eine alte Kalibrierung (Version 1 mit
+`dealerUp` und `dealerHole`) wird beim ersten Start automatisch umgewandelt: Das neue
+Dealer-Feld umfasst beide alten Felder. Die alte Fassung bleibt unter
+`bjassist.calibration.v1backup` und im Feld `legacy` erhalten.
 
 ## Neue Version veröffentlichen
 
@@ -73,7 +82,8 @@ Karten bleiben dabei erhalten.
 npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offline-Dateiliste,
                        # Strategie, Profile, Migration, Rechenmodell, Simulation, KI-Recherche
 npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright), inkl. Profile
-                       # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages)
+                       # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages),
+                       # Phase 6: Live-Runde, Archiv, Korrektur, Export, YUMEKO, Video, Überlauf
 ```
 
 ## Voraussetzungen
@@ -193,3 +203,75 @@ Antwort:
 
 Antworten ohne Quellen (Titel, https-URL, Abrufdatum) werden abgelehnt. Kostenpflichtige Dienste
 werden nie automatisch aktiviert.
+
+## Phase 6 (Version 0.6.0) – YUMEKO AI
+
+### Was ist neu
+
+- **YUMEKO AI** ist ein festes Strategieprofil („Adaptive Blackjack Intelligence.“). Es ist wie
+  jedes andere Profil aktivierbar; es ist immer genau ein Profil aktiv. YUMEKO kann nicht gelöscht
+  und nicht direkt bearbeitet werden – es ändert sich nur über geprüfte und bestätigte Strategieversionen.
+- **Spielarchiv** (Einstellungen → Spielarchiv): Jede Live-Runde wird gespeichert, sobald das Ergebnis
+  sicher ist. Fehlt etwas (z. B. Dealerkarten nicht fertig erkannt), wird sie als „unvollständig“
+  gespeichert und auf der Hauptansicht um Bestätigung (Gewonnen/Verloren/Push je Hand) gebeten.
+  Runden lassen sich öffnen, Karten und Ergebnisse korrigieren (Werte werden neu berechnet), löschen,
+  suchen und nach W/L/Push/Offen filtern. Export/Import als JSON; beim Import wird nie überschrieben.
+  Das ganze Archiv lässt sich nur nach ausdrücklicher Bestätigung löschen.
+- **Ein Dealer-Scanfeld**: Erste Dealerkarte = offene Karte, zweite = verdeckte Karte (bis sie wirklich
+  gesehen wird „unbekannt“), weitere = gezogene Karten. Jede Karte wird mehrfach bestätigt, bewegte
+  Karten werden nicht doppelt gezählt.
+- **Live-Runde**: Eine Runde endet nicht, nur weil Karten kurz verdeckt sind (erst nach 5 s leerem Tisch).
+  Split-Hände werden getrennt geführt, Aktionen (Ziehen/Stehen/Split) mit der jeweiligen Empfehlung erfasst.
+  „Runde abschliessen“ beendet eine Runde von Hand.
+- **Aufgeben/Surrender** ist aus Regeln, Profilen, Empfehlungen, Menüs, Demo und YUMEKO entfernt.
+  Alte Profile und Daten mit Aufgeben-Codes bleiben lesbar (Rh→Ziehen, Rs→Stehen, Rp→Split; Original in
+  `legacySurrender`).
+
+### Was YUMEKO wirklich lernt (und wie)
+
+1. **Archiv analysieren** – rechnet jede gespeicherte Entscheidung mit dem Rechenmodell (`ev.js`) nach:
+   Entscheidungsqualität getrennt vom Ergebnis, Glück/Pech (Ergebnis minus Erwartung), Konfidenzintervalle
+   für kleine Stichproben, häufige Situationen, wiederholte Fehler, uneinheitliche Entscheidungen.
+   Reproduzierbar: gleiche Daten → gleiches Ergebnis.
+2. **Erkennung** – aus Korrekturen im Archiv lernt YUMEKO, welche Ränge oft falsch erkannt werden, und
+   verlangt für diese Ränge zusätzliche Bestätigungen in der Live-Erkennung.
+3. **Strategieversionen** – ein Entwurf entsteht aus der Basisstrategie plus vom Benutzer bestätigten
+   Regeln/Hypothesen. Jede Abweichung wird mathematisch geprüft (kein Verlust über der Toleranz,
+   Gesamt-EV nicht schlechter als die Referenz). Aktiv wird eine Version erst nach erfolgreicher Prüfung
+   **und** ausdrücklicher Bestätigung.
+4. **Video-Lernsequenzen** – erkannte Szenen aus einem Video werden nach Prüfung/Korrektur als
+   Beobachtungen übernommen; sie ändern die Strategie nie direkt.
+
+Beobachtungen, mathematisch geprüfte Erkenntnisse und unbestätigte Hypothesen bleiben getrennt.
+Es gibt keine Gewinngarantie und keine erfundenen Analysen: Fortschritt entsteht nur aus echten Daten.
+
+### Wissensspeicher
+
+Kategorien: Spielerfahrungen, Videobeobachtungen, Strategieregeln, Mathematisch geprüfte Erkenntnisse,
+Unbestätigte Hypothesen, Quellen und Lernmaterial, Strategieversionen. Jeder Eintrag hat Inhalt, Ursprung,
+Datum, Regeln, Vertrauen, Prüfstatus und Verweise auf Runden/Videos. Einträge lassen sich korrigieren oder
+löschen; gelöschte automatische Einträge werden bei der nächsten Analyse nicht wieder angelegt.
+
+### Video lernen
+
+Verfügbar: vorhandene Kamera (keine zweite Verbindung) oder Videodatei, Bildanalyse alle 0,5 s,
+Kartenerkennung mit den angelernten Mustern, Szenenwechsel mit Zeitstempel, unsichere Erkennungen
+markiert, Korrektur, „Lernsequenz übernehmen“. Während „Video lernen“ ist die Live-Spielerkennung pausiert.
+
+**Noch nicht verfügbar:** Texterkennung (OCR), Sprach-Transkription und KI-Bildanalyse. Dafür bräuchte
+es einen eigenen Server mit KI-Dienst (Schlüssel nie im öffentlichen Code) und die ausdrückliche
+Zustimmung, bevor Bilder das Gerät verlassen.
+
+### Speicher
+
+IndexedDB-Datenbank `bjassist` (Stores `rounds`, `knowledge`, `videos`, `versions`, `meta`). Ist IndexedDB
+nicht verfügbar, wird ein kleinerer Ersatz in `localStorage` (`bjassist.db.<store>`) genutzt und darauf
+hingewiesen. Safari kann Website-Daten löschen – deshalb regelmässig im Spielarchiv exportieren.
+Profile: `bjassist.profiles` (Version 2, alte Version 1 wird automatisch umgewandelt).
+
+### Nur auf einem echten iPad prüfbar
+
+- Kartenerkennung mit echter Kamera im neuen Dealer-Feld (verdeckte Karte, gezogene Karten)
+- Video lernen mit Videodatei aus „Fotos“/„Dateien“ und mit gefilmtem Bildschirm
+- Speicher bleibt nach Schliessen der Home-Bildschirm-App erhalten
+- Flüssigkeit/Leistung während Live-Erkennung und Videoanalyse

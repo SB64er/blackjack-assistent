@@ -47,8 +47,9 @@ test('Strategie: harte Hände (Standard, 6 Decks S17)', () => {
   assert.equal(act(['6', '4'], '9'), ACTIONS.DOUBLE);
   assert.equal(act(['6', '4'], 'K'), ACTIONS.HIT);
   assert.equal(act(['6', '5'], 'A'), ACTIONS.HIT);
-  assert.equal(act(['9', '7'], '10'), ACTIONS.SURRENDER);
-  assert.equal(act(['9', '6'], '10'), ACTIONS.SURRENDER);
+  // Ab 0.6.0 kein Aufgeben: 16 und 15 gegen 10 = Ziehen
+  assert.equal(act(['9', '7'], '10'), ACTIONS.HIT);
+  assert.equal(act(['9', '6'], '10'), ACTIONS.HIT);
   assert.equal(act(['9', '6'], '9'), ACTIONS.HIT);
   assert.equal(act(['10', '7'], 'A'), ACTIONS.STAND);
 });
@@ -92,18 +93,17 @@ test('Strategie: Tischregeln verändern die Empfehlung', () => {
   assert.equal(act(['6', '5'], 'A', H17), ACTIONS.DOUBLE, 'H17: 11 gegen Ass verdoppeln');
   assert.equal(act(['A', '7'], '2', H17), ACTIONS.DOUBLE, 'H17: Soft 18 gegen 2 verdoppeln');
   assert.equal(act(['A', '8'], '6', H17), ACTIONS.DOUBLE, 'H17: Soft 19 gegen 6 verdoppeln');
-  assert.equal(act(['10', '5'], 'A', H17), ACTIONS.SURRENDER, 'H17: 15 gegen Ass aufgeben');
-  assert.equal(act(['10', '7'], 'A', H17), ACTIONS.SURRENDER, 'H17: 17 gegen Ass aufgeben');
-  assert.equal(act(['8', '8'], 'A', H17), ACTIONS.SURRENDER, 'H17: 8,8 gegen Ass aufgeben');
+  assert.equal(act(['10', '5'], 'A', H17), ACTIONS.HIT, 'H17: 15 gegen Ass ziehen (kein Aufgeben)');
+  assert.equal(act(['10', '7'], 'A', H17), ACTIONS.STAND, 'H17: 17 gegen Ass stehen');
+  assert.equal(act(['8', '8'], 'A', H17), ACTIONS.SPLIT, 'H17: 8,8 gegen Ass splitten');
   const noDas = { ...R, das: false };
   assert.equal(act(['2', '2'], '2', noDas), ACTIONS.HIT);
   assert.equal(act(['4', '4'], '5', noDas), ACTIONS.HIT);
   assert.equal(act(['6', '6'], '2', noDas), ACTIONS.HIT);
   assert.equal(act(['6', '6'], '3', noDas), ACTIONS.SPLIT);
-  const noSur = { ...R, surrender: 'keine' };
-  assert.equal(act(['9', '7'], '10', noSur), ACTIONS.HIT, 'ohne Aufgeben: ziehen');
-  assert.equal(act(['8', '8'], 'A', { ...H17, surrender: 'keine' }), ACTIONS.SPLIT);
-  // Ungültige Aktionen ausgeschlossen: kein Verdoppeln nach Split ohne DAS, kein Aufgeben nach Split
+  // Alte Regel "Aufgeben erlaubt" wird ignoriert
+  assert.equal(act(['9', '7'], '10', { ...R, surrender: 'spaet' }), ACTIONS.HIT, 'alte Aufgeben-Regel wirkt nicht mehr');
+  // Ungültige Aktionen ausgeschlossen: kein Verdoppeln nach Split ohne DAS
   assert.equal(act(['6', '5'], '6', noDas, { afterSplit: true }), ACTIONS.HIT);
   assert.equal(act(['6', '5'], '6', R, { afterSplit: true }), ACTIONS.DOUBLE);
   assert.equal(act(['9', '7'], '10', R, { afterSplit: true }), ACTIONS.HIT);
@@ -117,7 +117,7 @@ test('Strategie: keine Empfehlung bei Blackjack, Überkauft, unsicheren Karten',
 });
 
 test('Bestehende Demo-Empfehlungen bleiben mit der Standardstrategie unverändert', () => {
-  const map = { HIT: 'ZIEHEN', STAND: 'STEHEN', DOUBLE: 'VERDOPPELN', SPLIT: 'SPLITTEN', SURRENDER: 'AUFGEBEN' };
+  const map = { HIT: 'ZIEHEN', STAND: 'STEHEN', DOUBLE: 'VERDOPPELN', SPLIT: 'SPLITTEN' };
   for (const s of DEMO_SCENARIOS.filter((x) => x.recommendation)) {
     const d = decide(s.player, s.dealerUp, { rules: R });
     assert.equal(map[d.action], s.recommendation, s.id);
@@ -129,10 +129,10 @@ test('Profil-Abweichung und Rückfall auf Standard bei ungültiger Zelle', () =>
   assert.equal(d.action, ACTIONS.STAND);
   assert.equal(d.source, 'profile');
   assert.equal(d.deviates, true);
-  assert.equal(d.standardAction, ACTIONS.SURRENDER);
+  assert.equal(d.standardAction, ACTIONS.HIT);
   const bad = decide(c('10', '6'), up('10'), { rules: R, overrides: { 'hard:16:10': 'P' } });
   assert.equal(bad.source, 'fallback');
-  assert.equal(bad.action, ACTIONS.SURRENDER);
+  assert.equal(bad.action, ACTIONS.HIT);
 });
 
 // --- Rechenmodell -----------------------------------------------------------
@@ -185,8 +185,8 @@ test('Profile: mehrere Profile, genau eines aktiv, Wechsel', () => {
   const a = s.create({ name: 'Casino A' });
   const b = s.create({ name: 'Casino B' });
   s.create({ name: 'Casino A' }); // gleicher Name -> eindeutig gemacht
-  assert.equal(s.list().length, 4);
-  assert.equal(new Set(s.list().map((p) => p.name)).size, 4);
+  assert.equal(s.list().length, 5, 'Standard + YUMEKO + 3 eigene');
+  assert.equal(new Set(s.list().map((p) => p.name)).size, 5);
   assert.equal(s.activeId, STANDARD_ID);
   s.activate(a.id);
   assert.equal(s.active.id, a.id);
@@ -236,7 +236,7 @@ test('Profile: kein unkontrolliertes Überschreiben (zweites Fenster)', () => {
   // Nach dem Neuladen enthält Fenster 2 das Profil von Fenster 1 und kann speichern.
   assert.ok(s2.list().some((p) => p.name === 'Von Fenster 1'));
   s2.create({ name: 'Von Fenster 2' });
-  assert.equal(store(storage).list().length, 3);
+  assert.equal(store(storage).list().length, 4);
 });
 
 // --- 6./12. Migration und Rückwärtskompatibilität ---------------------------

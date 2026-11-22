@@ -1,0 +1,104 @@
+// Lokale Datenbank für grössere Datenmengen (Spielarchiv, YUMEKO-Wissen).
+// Bevorzugt IndexedDB. Ist IndexedDB nicht verfügbar (z. B. privates Fenster),
+// wird auf localStorage ausgewichen – mit Hinweis, dass dort weniger Platz ist.
+// Alle Daten bleiben auf dem Gerät.
+import { load, save } from './store.js';
+
+export const DB_NAME = 'bjassist';
+export const DB_VERSION = 1;
+export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta'];
+
+const reqP = (req) => new Promise((resolve, reject) => {
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+
+class IdbDatabase {
+  constructor(db) {
+    this.db = db;
+    this.kind = 'indexeddb';
+  }
+
+  _tx(store, mode = 'readonly') {
+    return this.db.transaction(store, mode).objectStore(store);
+  }
+
+  all(store) { return reqP(this._tx(store).getAll()); }
+  get(store, id) { return reqP(this._tx(store).get(id)).then((x) => x ?? null); }
+  delete(store, id) { return reqP(this._tx(store, 'readwrite').delete(id)); }
+  clear(store) { return reqP(this._tx(store, 'readwrite').clear()); }
+  put(store, value) { return reqP(this._tx(store, 'readwrite').put(value)).then(() => value); }
+
+  putMany(store, values) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(store, 'readwrite');
+      const os = tx.objectStore(store);
+      for (const v of values) os.put(v);
+      tx.oncomplete = () => resolve(values.length);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Speichern abgebrochen.'));
+    });
+  }
+}
+
+/** Gleiche Schnittstelle im Arbeitsspeicher (Tests) bzw. mit localStorage (Ausweichlösung). */
+export class MemoryDatabase {
+  constructor({ persist = null } = {}) {
+    this.kind = persist ? 'local' : 'memory';
+    this.persist = persist; // { load(key), save(key, value) }
+    this.data = new Map(STORES.map((s) => [s, new Map()]));
+    if (persist) {
+      for (const s of STORES) {
+        const list = persist.load(`db.${s}`, []);
+        if (Array.isArray(list)) for (const v of list) if (v && v.id) this.data.get(s).set(v.id, v);
+      }
+    }
+  }
+
+  _save(store) {
+    if (!this.persist) return;
+    if (!this.persist.save(`db.${store}`, [...this.data.get(store).values()])) {
+      throw new Error('Speicher voll: Daten konnten nicht gespeichert werden. Bitte das Archiv exportieren.');
+    }
+  }
+
+  async all(store) { return [...this.data.get(store).values()].map(clone); }
+  async get(store, id) { const v = this.data.get(store).get(id); return v ? clone(v) : null; }
+  async put(store, value) { this.data.get(store).set(value.id, clone(value)); this._save(store); return value; }
+  async putMany(store, values) { for (const v of values) this.data.get(store).set(v.id, clone(v)); this._save(store); return values.length; }
+  async delete(store, id) { this.data.get(store).delete(id); this._save(store); }
+  async clear(store) { this.data.get(store).clear(); this._save(store); }
+}
+
+function clone(v) {
+  return typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+}
+
+/** Datenbank öffnen. Ohne IndexedDB: localStorage-Ausweichlösung. */
+export async function openDatabase({ indexedDB = globalThis.indexedDB, name = DB_NAME } = {}) {
+  if (!indexedDB) return new MemoryDatabase({ persist: { load, save } });
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(name, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        // Nur fehlende Bereiche anlegen – vorhandene Daten bleiben bei Updates erhalten.
+        for (const s of STORES) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('Datenbank ist in einem anderen Fenster geöffnet.'));
+    });
+    return new IdbDatabase(db);
+  } catch (err) {
+    console.warn('[db] IndexedDB nicht verfügbar – Ausweichlösung localStorage', err);
+    return new MemoryDatabase({ persist: { load, save } });
+  }
+}
+
+let shared = null;
+/** Eine gemeinsame Datenbank für die ganze App. */
+export function sharedDatabase() {
+  if (!shared) shared = openDatabase();
+  return shared;
+}

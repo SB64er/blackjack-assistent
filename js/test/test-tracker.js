@@ -30,7 +30,7 @@ export class TestTracker extends Emitter {
       else this.emit('change');
     });
     calibration.on('region-edited', ({ id }) => {
-      if (id === 'dealerUp' || id === 'dealerHole') this._set({ dealerMarked: true });
+      if (id === 'dealer') this._set({ dealerMarked: true });
       if (id === 'player') this._set({ playerMarked: true });
     });
     calibration.on('saved', (c) => this._set({ savedAt: c.savedAt, savedLaunchId: this.launchId }));
@@ -63,7 +63,7 @@ export class TestTracker extends Emitter {
     return [
       { n: 1, title: 'Kamera starten', done: d.cameraStarted, hint: cameraOn ? 'Kamera läuft.' : 'Tippe unten auf „Kamera starten“.' },
       { n: 2, title: 'PC-Monitor im Kamerabild sehen', done: d.monitorConfirmed, hint: 'Richte das iPhone aus und bestätige.', action: d.monitorConfirmed ? null : 'confirm-monitor' },
-      { n: 3, title: 'Dealerkarte markieren (A1/A2)', done: d.dealerMarked, hint: '„Kalibrieren“ tippen und Bereich A1 auf die offene Dealerkarte ziehen.' },
+      { n: 3, title: 'Dealer-Feld markieren (A)', done: d.dealerMarked, hint: '„Kalibrieren“ tippen und Bereich A über alle Dealerkarten ziehen.' },
       { n: 4, title: 'Eigene Karten markieren (B)', done: d.playerMarked, hint: 'Bereich B über deine Karten legen – mit Platz für weitere Karten.' },
       { n: 5, title: 'Bereiche speichern', done: !!d.savedAt, hint: '„Kalibrierung speichern“ tippen.' },
       { n: 6, title: 'App schliessen und neu öffnen', done: reopened, hint: 'App im App-Umschalter ganz schliessen, dann über das Home-Bildschirm-Symbol öffnen.' },

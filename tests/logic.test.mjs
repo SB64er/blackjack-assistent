@@ -78,7 +78,7 @@ test('Runden: stabile Erkennung, neue Runde, gezogene Karte', () => {
   t.push(raw(['10', '6', '3']), 500);
   r = t.push(raw(['10', '6', '3']), 750);
   assert.deepEqual(r.events.map((e) => e.type), ['card-added']);
-  assert.equal(signatureOf(raw(['A'])), '6|-|A||');
+  assert.equal(signatureOf(raw(['A'])), '6|A||');
 });
 
 test('Muster: Packen/Entpacken und Ähnlichkeit', () => {
