@@ -281,7 +281,8 @@ export class Yumeko extends Emitter {
     if (a.error) issues.push(a.error);
     if (k.error) issues.push(k.error);
     if (a.kind === 'local') issues.push('IndexedDB nicht verfügbar – Daten liegen im kleineren localStorage. Bitte regelmässig exportieren.');
-    issues.push('Video: Texterkennung (OCR) und Sprachtranskription sind noch nicht verfügbar.');
+    issues.push('Video: Sprachtranskription ist nicht verfügbar; Texterkennung (OCR) nur auf Geräten mit eingebautem Texterkenner im Browser.');
+    issues.push('YUMEKO-Chat: keine Sprachmodell-Anbindung – Antworten werden aus deinen Daten berechnet.');
     let phase;
     if (!a.rounds.length && !k.videos.length) phase = 'Wartet auf Daten – spiele Runden mit Kamera oder lerne ein Video.';
     else if (!last) phase = 'Beobachtet – noch keine Analyse durchgeführt.';
@@ -334,6 +335,7 @@ export class Yumeko extends Emitter {
         },
         recognition: { perRank: report.recognition.perRank }
       });
+      await this.knowledge.logHistory('analyse', `Archiv analysiert: ${report.roundsUsed} von ${report.roundsTotal} Runden, ${report.decisionsUsed} Entscheidungen, ${report.mistakes.length} Fehlertypen, ${items.length} Erkenntnisse.`);
       this.lastReport = report;
       return report;
     } finally {
@@ -405,7 +407,7 @@ export class Yumeko extends Emitter {
         ...base,
         id: `video:${seq.id}:${i}`,
         category: 'video',
-        content: `Szene ${i + 1} (${fmtTime(sc.t0)}): Dealer ${dealer.map((c) => c.rank).join(' ') || '–'}, Spieler ${player.map((c) => c.rank).join(' ') || '–'}${sc.action ? `, gezeigte Aktion: ${ACTION_DE[sc.action]}` : ''}.`,
+        content: `Szene ${i + 1} (${fmtTime(sc.t0)}): Dealer ${dealer.map((c) => c.rank).join(' ') || '–'}, Spieler ${player.map((c) => c.rank).join(' ') || '–'}${sc.action ? `, gezeigte Aktion: ${ACTION_DE[sc.action]}${sc.actionSuggested ? ' (aus Kartenänderung abgeleitet)' : ''}` : ''}.`,
         confidence: { level: sc.corrected ? 'mittel' : (sc.unsure ? 'niedrig' : 'mittel'), n: 1, basis: sc.corrected ? 'Erkennung, vom Benutzer korrigiert' : 'Kartenerkennung, vom Benutzer übernommen' },
         status: STATUS.userConfirmed,
         data: { scene: sc }
@@ -424,6 +426,19 @@ export class Yumeko extends Emitter {
           });
         }
       }
+    });
+    (seq.texts || []).slice(0, 20).forEach((tx, i) => {
+      items.push({
+        id: `video:${seq.id}:text:${i}`,
+        category: 'video',
+        content: `Eingeblendeter Text bei ${fmtTime(tx.t)}: „${tx.text}“ (lokale Texterkennung, ungeprüft).`,
+        origin: { type: 'video', detail: seq.source },
+        rules,
+        refs: { videos: [seq.id] },
+        confidence: { level: 'niedrig', n: 1, basis: 'Texterkennung des Browsers' },
+        status: STATUS.observed,
+        auto: false
+      });
     });
     await this.knowledge.upsertMany(items);
     return items;

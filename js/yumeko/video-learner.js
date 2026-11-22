@@ -10,19 +10,83 @@
 //    aufnahmen sind oft schlechter erkennbar -> Unsicheres wird markiert).
 //  - Texterkennung (OCR), Sprachtranskription, KI-Interpretation: noch nicht
 //    verfügbar. Es werden keine Texte oder Transkripte erfunden.
-import { valueClass } from '../game/hand.js';
+import { valueClass, rankValue } from '../game/hand.js';
 
 export const VIDEO_FEATURES = [
   { id: 'cards', label: 'Spielkarten im Bild erkennen', status: 'verfügbar', note: 'Nutzt deine angelernten Kartenmuster. Bei Videos auf einem Bildschirm kann die Erkennung unsicherer sein.' },
   { id: 'scenes', label: 'Szenenwechsel mit Zeitstempeln', status: 'verfügbar', note: 'Neue Szene, sobald sich die sichtbaren Karten stabil ändern.' },
   { id: 'correct', label: 'Erkennungen korrigieren und Aktion zuordnen', status: 'verfügbar', note: 'Kartenwert, Dealer/Spieler und gezeigte Aktion von Hand festlegen.' },
   { id: 'file', label: 'Videodatei vom iPad importieren', status: 'verfügbar', note: 'Die Datei bleibt auf dem Gerät und wird nicht hochgeladen.' },
-  { id: 'ocr', label: 'Eingeblendete Texte lesen (OCR)', status: 'Noch nicht verfügbar', note: 'Kein lokaler Texterkenner im Browser des iPads. Benötigt künftig eine Erweiterung.' },
+  { id: 'actions', label: 'Spielaktionen aus Kartenänderungen vorschlagen', status: 'verfügbar', note: 'Neue Spielerkarte = Ziehen, neue Dealerkarten bei gleicher Spielerhand = Stehen. Nur Vorschlag – bitte prüfen (Verdoppeln/Split sind nicht sicher erkennbar).' },
+  { id: 'ocr', label: 'Eingeblendete Texte lesen (OCR)', status: 'Noch nicht verfügbar', note: 'Safari auf dem iPad bietet keinen lokalen Texterkenner. Wird automatisch genutzt, falls der Browser einen eingebauten Texterkenner (TextDetector) hat – ohne Upload.' },
   { id: 'speech', label: 'Gesprochene Erklärungen transkribieren', status: 'Noch nicht verfügbar', note: 'Der Ton eines Videos kann im Browser nicht lokal in Text umgewandelt werden.' },
   { id: 'ai', label: 'KI-Interpretation strategischer Zusammenhänge', status: 'Noch nicht verfügbar', note: 'Bräuchte einen eigenen Server mit KI-Dienst. Kamerabilder würden nur nach ausdrücklicher Zustimmung gesendet – derzeit wird nichts gesendet.' }
 ];
 
 export const UNSURE_SCORE = 0.8;
+
+/** Ist ein lokaler Texterkenner im Browser vorhanden? (Shape Detection API, kein Upload) */
+export function textDetectorAvailable(g = globalThis) {
+  return typeof g.TextDetector === 'function';
+}
+
+/** Funktionsliste mit dem tatsächlichen Stand dieses Geräts. */
+export function videoFeatures(g = globalThis) {
+  return VIDEO_FEATURES.map((f) => (f.id === 'ocr' && textDetectorAvailable(g)
+    ? { ...f, status: 'verfügbar', note: 'Lokaler Texterkenner dieses Browsers (ohne Upload). Erkannte Texte werden zur Prüfung angezeigt.' }
+    : f));
+}
+
+/** Welche Videoformate kann dieser Browser abspielen (und damit auswerten)? */
+export function supportedVideoFormats(video) {
+  if (!video || typeof video.canPlayType !== 'function') return [];
+  const list = [['MP4 (H.264)', 'video/mp4; codecs="avc1.42E01E"'], ['MOV (iPhone/iPad)', 'video/quicktime'], ['MP4 (HEVC)', 'video/mp4; codecs="hvc1"'], ['WebM', 'video/webm']];
+  return list.filter(([, t]) => video.canPlayType(t)).map(([n]) => n);
+}
+
+const ranks = (cards, role) => cards.filter((c) => c.role === role).map((c) => c.rank);
+function isExtension(a, b) {
+  // b enthält alle Karten von a (Wertklassen) und genau eine mehr
+  if (b.length !== a.length + 1) return false;
+  const rest = b.map(valueClass);
+  for (const r of a.map(valueClass)) {
+    const i = rest.indexOf(r);
+    if (i < 0) return false;
+    rest.splice(i, 1);
+  }
+  return true;
+}
+const sameSet = (a, b) => a.length === b.length && a.map(valueClass).sort().join() === b.map(valueClass).sort().join();
+const handTotal = (list) => {
+  let t = 0; let aces = 0;
+  for (const r of list) { const v = rankValue(r); t += v; if (v === 11) aces += 1; }
+  while (t > 21 && aces) { t -= 10; aces -= 1; }
+  return t;
+};
+
+/**
+ * Spielaktionen aus der Abfolge der Szenen VORSCHLAGEN (nie stillschweigend festlegen):
+ *  - nächste Szene hat genau eine Spielerkarte mehr, Dealer unverändert -> Ziehen
+ *  - Spielerhand unverändert, Dealer bekommt Karten                    -> Stehen
+ * Vorhandene (vom Benutzer gewählte) Aktionen bleiben unverändert. Reine Logik.
+ */
+export function inferActions(scenes) {
+  for (let i = 0; i < scenes.length - 1; i++) {
+    const a = scenes[i];
+    const b = scenes[i + 1];
+    if (a.action) continue;
+    const pa = ranks(a.cards, 'player');
+    const pb = ranks(b.cards, 'player');
+    const da = ranks(a.cards, 'dealer');
+    const db = ranks(b.cards, 'dealer');
+    if (pa.length < 2 || !da.length || handTotal(pa) >= 21) continue;
+    let act = null;
+    if (isExtension(pa, pb) && sameSet(da, db)) act = 'HIT';
+    else if (sameSet(pa, pb) && db.length > da.length) act = 'STAND';
+    if (act) { a.action = act; a.actionSuggested = true; }
+  }
+  return scenes;
+}
 
 const sig = (cards) => cards.map((c) => valueClass(c.rank)).sort().join('.');
 

@@ -5,8 +5,10 @@
 import { load, save } from './store.js';
 
 export const DB_NAME = 'bjassist';
-export const DB_VERSION = 1;
-export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta'];
+// Version 2 (0.7.0): neue Bereiche für Simulationen (getrennt von echten Runden),
+// Echtgeld-Protokoll und Lernverlauf. Vorhandene Bereiche bleiben unverändert.
+export const DB_VERSION = 2;
+export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta', 'simulations', 'ledger', 'history'];
 
 const reqP = (req) => new Promise((resolve, reject) => {
   req.onsuccess = () => resolve(req.result);

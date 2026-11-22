@@ -11,6 +11,13 @@ import { valueClass } from './hand.js';
 
 const center = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
 
+/** Überlappung zweier Rechtecke relativ zum kleineren (0–1). */
+export function boxOverlap(a, b) {
+  const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  return (ix * iy) / Math.max(1e-9, Math.min(a.w * a.h, b.w * b.h));
+}
+
 export class CardTracker {
   /**
    * @param {{ confirmFrames?: number, confirmFor?: (rank) => number, near?: number }} opts
@@ -18,7 +25,8 @@ export class CardTracker {
    *   confirmFor: optional pro Kartenwert (z. B. mehr Prüfungen für oft verwechselte Werte)
    *   near: Abstand (relativ zum Bild), bis zu dem eine Erkennung als dieselbe Karte gilt
    */
-  constructor({ confirmFrames = 2, confirmFor = null, near = 0.06 } = {}) {
+  constructor({ confirmFrames = 2, confirmFor = null, near = 0.06, moveRadius = 0.4 } = {}) {
+    this.moveRadius = moveRadius;
     this.confirmFrames = confirmFrames;
     this.confirmFor = confirmFor;
     this.near = near;
@@ -66,9 +74,15 @@ export class CardTracker {
 
     // 2) Übrige Erkennungen: verschobene bestätigte Karte desselben Werts,
     //    die in diesem Bild fehlt? Dann ist es dieselbe Karte (Bewegung).
+    //    Ab 0.7.0: nur innerhalb eines Bewegungsradius und nicht, wenn die neue
+    //    Erkennung eine andere sichtbare Karte überlappt (überlappende Karten:
+    //    eine neue Karte desselben Werts darf nicht als "bewegte" alte Karte gelten).
+    const matchedBoxes = () => [...matched].map((k) => this.cards[k] && this.cards[k].box).filter(Boolean);
     list.forEach((d, i) => {
       if (used.has(i)) return;
-      const j = this.cards.findIndex((c, k) => !matched.has(k) && c.confirmed && c.cls === valueClass(d.rank));
+      if (d.box && matchedBoxes().some((b) => boxOverlap(b, d.box) > 0.15)) return;
+      const j = this.cards.findIndex((c, k) => !matched.has(k) && c.confirmed && c.cls === valueClass(d.rank)
+        && (!d.box || !c.box || this._dist(d.box, c.box) <= this.moveRadius));
       if (j >= 0) {
         used.add(i); matched.add(j);
         this._hit(this.cards[j], d, now, true);

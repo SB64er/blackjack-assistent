@@ -8,6 +8,8 @@ import { decide, ACTION_TO_RECOMMENDATION, ACTION_LABEL } from '../strategy/engi
 import { decisionEVs } from '../yumeko/archive-analysis.js';
 import { pct } from '../strategy/analysis.js';
 import { OUTCOME_LABEL } from '../game/settle.js';
+import { assessRisk, RISK_LEVEL_TEXT } from '../risk/risk.js';
+import { activeStrategyEVCached } from '../yumeko/decision.js';
 
 const plain = (c) => (c ? { rank: c.rank, confident: c.confident !== false, ...(c.suit ? { suit: c.suit } : {}) } : null);
 
@@ -69,6 +71,7 @@ export class MainView extends View {
         </nav>
       </header>
       <div data-slot="notice"></div>
+      <div data-slot="risk"></div>
       <div class="main-grid" data-slot="grid"></div>`;
     this.mini = this.el.querySelector('[data-slot="mini"]');
     camera.attach(this.mini);
@@ -88,6 +91,7 @@ export class MainView extends View {
     this.listen(recognition, 'round-update', r);
     if (this.ctx.archive) this.listen(this.ctx.archive, 'change', r);
     if (this.ctx.ui) this.listen(this.ctx.ui, 'change', r);
+    if (this.ctx.bankroll) this.listen(this.ctx.bankroll, 'change', r);
     this.listen(recognition, 'event', (ev) => {
       this._event = ev;
       clearTimeout(this._eventTimer);
@@ -191,8 +195,29 @@ export class MainView extends View {
       const split = m.hands.length > 1;
       m.advice = m.hands.map((h) => this._advise(h.cards, m.dealerUp, split));
       if (profile.type === 'yumeko' && m.advice[0]) m.explain = this._explain(m.hands[0].cards, m.dealerUp, split);
+      // Für den YUMEKO-Chat („Warum empfiehlst du diese Aktion?“) – ohne Ereignis, nur Zustand.
+      if (this.ctx.ui && m.advice[0]) this.ctx.ui.lastSituation = { cards: m.hands[0].cards.map((c) => ({ rank: c.rank })), up: { rank: m.dealerUp.rank }, afterSplit: split };
     }
     return m;
+  }
+
+  _riskHtml() {
+    const { bankroll, profiles, settings } = this.ctx;
+    if (!bankroll || !bankroll.config.enabled) return '';
+    const st = profiles.strategyFor();
+    const strategy = activeStrategyEVCached({ rules: settings.get('rules'), overrides: st.overrides, strategyRules: st.strategyRules });
+    const risk = assessRisk({ config: bankroll.config, stats: bankroll.stats(), strategy });
+    const top = risk.messages.find((x) => x.tone === 'stop') || risk.messages.find((x) => x.tone === 'warn' && x.code !== 'negative-ev') || risk.messages.find((x) => x.code === 'negative-ev');
+    const shortText = top && top.code === 'negative-ev'
+      ? `Negativer Erwartungswert (${pct(strategy.ev, 2)} pro Einsatz) – YUMEKO rät vom Echtgeld-Spiel ab.`
+      : (top ? top.text : 'Echtgeld-Modus aktiv.');
+    const cur = bankroll.config.currency;
+    const bal = bankroll.stats().balance;
+    return `<button type="button" class="risk-strip risk-strip--${risk.level}" data-nav="risiko" ${risk.stop ? 'role="alert"' : ''}>
+      <b>${risk.stop ? 'STOPP' : esc(RISK_LEVEL_TEXT[risk.level])}</b>
+      <span>${esc(shortText)}</span>
+      <small>Saldo ${bal != null ? bal.toFixed(2) : '–'} ${esc(cur)} · Spielempfehlung ≠ Empfehlung, Geld einzusetzen</small>
+    </button>`;
   }
 
   // YUMEKO: nachvollziehbare Begründung aus dem Rechenmodell.
@@ -342,6 +367,11 @@ export class MainView extends View {
 
     const noticeEl = this.el.querySelector('[data-slot="notice"]');
     if (noticeEl.innerHTML !== notice) noticeEl.innerHTML = notice;
+
+    // Risikointelligenz – getrennt von der Spielempfehlung (nur im Echtgeld-Modus).
+    const riskEl = this.el.querySelector('[data-slot="risk"]');
+    const riskHtml = this._riskHtml();
+    if (riskEl.innerHTML !== riskHtml) riskEl.innerHTML = riskHtml;
 
     // Spielbereich nur neu zeichnen, wenn sich etwas geändert hat
     // (verhindert verlorene Tipps bei 4 Auswertungen pro Sekunde).

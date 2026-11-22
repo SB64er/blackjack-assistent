@@ -51,8 +51,24 @@ export function otsu(gray) {
 }
 
 // Weiss = hell und farbarm. Liefert Uint8Array (1 = weiss).
+// Ab 0.7.0: Bei schwachem Licht (hellste Bildteile deutlich unter normalem Kartenweiss)
+// wird die Mindesthelligkeit für "Weiss" proportional gesenkt. Bei normalem Licht
+// bleibt alles wie bisher (keine Änderung der bewährten Erkennung).
+export function brightLevel(gray, q = 0.97) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const target = gray.length * q;
+  let acc = 0;
+  for (let t = 0; t < 256; t++) { acc += hist[t]; if (acc >= target) return t; }
+  return 255;
+}
+
 export function whiteMask(gray, sat, opts = {}) {
-  const minT = opts.minWhite ?? 120;
+  let minT = opts.minWhite ?? 120;
+  if (opts.adaptive !== false && opts.minWhite == null && gray.length) {
+    const bright = brightLevel(gray);
+    if (bright < 200) minT = Math.max(60, Math.round(120 * bright / 200));
+  }
   const maxSat = opts.maxSat ?? 75;
   let t = otsu(gray);
   t = Math.max(minT, Math.min(t, 215));

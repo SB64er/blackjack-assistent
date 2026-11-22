@@ -5,7 +5,7 @@ import { validateRound, recomputeRound } from './round-record.js';
 import { APP_VERSION } from '../core/version.js';
 
 export const EXPORT_FORMAT = 'bjai-backup';
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2; // 2 = ab 0.7.0 (Geldbeträge, Echtgeld-Protokoll, Simulationen); Version 1 bleibt importierbar
 
 export class ArchiveError extends Error {
   constructor(code, message) {
@@ -40,6 +40,7 @@ export class ArchiveStore extends Emitter {
     let invalid = 0;
     for (const r of raw) {
       const v = validateRound(r);
+      if (v && v.migratedFrom) recomputeRound(v); // Daten aus 0.6.0: Einheiten/Geld neu berechnen (gespeicherter Eintrag bleibt unverändert)
       if (v) list.push(v); else invalid += 1; // unlesbare Einträge bleiben unverändert in der Datenbank
     }
     this.invalid = invalid;
@@ -64,13 +65,13 @@ export class ArchiveStore extends Emitter {
    * Runde korrigieren. mutate(rec) verändert eine Kopie; Änderungen werden
    * protokolliert (corrections) und die Runde gilt danach als manuell bestätigt.
    */
-  async update(id, mutate, note = 'Korrektur', changes = []) {
+  async update(id, mutate, note = 'Korrektur', changes = [], { keepConfirmation = false } = {}) {
     await this._ready;
     const cur = this.get(id);
     if (!cur) throw new ArchiveError('not-found', 'Runde nicht gefunden.');
     const copy = JSON.parse(JSON.stringify(cur));
     mutate(copy);
-    copy.confirmation = 'manual';
+    if (!keepConfirmation) copy.confirmation = 'manual';
     copy.updatedAt = new Date().toISOString();
     // changes: [{ from: 'K', to: '7' }] – korrigierte Kartenwerte (YUMEKO lernt daraus)
     const ch = (Array.isArray(changes) ? changes : []).filter((c) => c && c.from && c.to).map((c) => ({ from: String(c.from), to: String(c.to) }));
@@ -82,6 +83,23 @@ export class ArchiveStore extends Emitter {
     this.rounds = this.rounds.map((r) => (r.id === id ? v : r));
     this.emit('change', { type: 'update', id });
     return v;
+  }
+
+  /**
+   * Geldbeträge einer Runde ergänzen (Einsatz, Zusatzeinsatz, Auszahlung je Hand;
+   * Saldo vor/nach aus dem Echtgeld-Protokoll). Karten gelten dadurch NICHT als bestätigt.
+   */
+  async setMoney(id, { hands = [], money = undefined } = {}, note = 'Geldbeträge ergänzt') {
+    return this.update(id, (r) => {
+      hands.forEach((m, i) => {
+        const h = r.hands[i];
+        if (!h || !m) return;
+        if ('bet' in m) h.bet = m.bet;
+        if ('extraBet' in m) h.extraBet = m.extraBet;
+        if ('payout' in m) { h.payout = m.payout; h.payoutSource = m.payout == null ? null : 'manual'; }
+      });
+      if (money !== undefined) r.money = money;
+    }, note, [], { keepConfirmation: true });
   }
 
   async remove(id) {

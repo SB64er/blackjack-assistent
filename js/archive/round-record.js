@@ -3,8 +3,16 @@
 import { RANKS } from '../game/hand.js';
 import { totals, settleHand, dealerFinal, netResult, OUTCOMES } from '../game/settle.js';
 import { normalizeRules } from '../strategy/standard.js';
+import { computedPayout } from '../risk/bankroll.js';
 
-export const RECORD_SCHEMA = 1;
+// Schema 2 (0.7.0): Geldbeträge getrennt von Einsatz-Einheiten.
+//   hand.net       – Ergebnis in Einsatz-Einheiten (immer aus dem Ergebnis berechnet)
+//   hand.bet       – tatsächlicher Einsatz in Geld (nur wenn eingegeben)
+//   hand.extraBet  – Zusatzeinsatz bei Verdoppeln (Split: jede Hand hat ihren eigenen Einsatz)
+//   hand.payout    – tatsächliche Auszahlung inkl. Einsatz (eingegeben oder aus Einsatz+Ergebnis berechnet)
+//   hand.moneyNet  – payout − bet − extraBet
+//   round.money    – { currency, balanceBefore, balanceAfter, ledgerId } aus dem Echtgeld-Protokoll
+export const RECORD_SCHEMA = 2;
 // Aktionen ab 0.6.0. "SURRENDER" kann in alten/importierten Daten vorkommen und
 // bleibt lesbar, wird aber nie mehr empfohlen oder neu erfasst.
 export const ACTIONS_NOW = ['HIT', 'STAND', 'DOUBLE', 'SPLIT'];
@@ -15,6 +23,7 @@ export const STATUS_TEXT = { complete: 'Vollständig (automatisch)', confirmed: 
 const isRank = (r) => RANKS.includes(r);
 const iso = (s, fb) => (typeof s === 'string' && !Number.isNaN(Date.parse(s)) ? s : fb);
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+const amount = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x * 100) / 100 : null);
 
 function cleanCards(list) {
   return (Array.isArray(list) ? list : []).filter((c) => c && isRank(c.rank)).map((c) => ({
@@ -30,6 +39,7 @@ export function validateRound(r) {
   if (!startedAt) return null;
   const handsIn = Array.isArray(r.hands) ? r.hands : [];
   if (!handsIn.length) return null;
+  const oldSchema = !(r.schema >= 2);
   const hands = handsIn.slice(0, 4).map((h, i) => ({
     index: i,
     split: !!h.split,
@@ -47,8 +57,12 @@ export function validateRound(r) {
     outcomeSource: h.outcomeSource === 'manual' || h.outcomeSource === 'auto' ? h.outcomeSource : null,
     blackjack: !!h.blackjack,
     doubled: !!h.doubled,
-    bet: num(h.bet),
-    payout: num(h.payout),
+    bet: amount(h.bet),
+    extraBet: oldSchema ? null : amount(h.extraBet),
+    // Bis 0.6.0 war "payout" kein echter Auszahlungsbetrag -> wird neu berechnet.
+    payout: oldSchema ? null : amount(h.payout),
+    payoutSource: !oldSchema && (h.payoutSource === 'manual' || h.payoutSource === 'computed') ? h.payoutSource : null,
+    moneyNet: oldSchema ? null : num(h.moneyNet),
     net: num(h.net)
   }));
   const dealerIn = r.dealer && typeof r.dealer === 'object' ? r.dealer : {};
@@ -70,6 +84,13 @@ export function validateRound(r) {
       minScore: num(r.recognition.minScore), avgScore: num(r.recognition.avgScore)
     } : null,
     corrections: Array.isArray(r.corrections) ? r.corrections.slice(-50) : [],
+    money: r.money && typeof r.money === 'object' ? {
+      currency: typeof r.money.currency === 'string' ? r.money.currency.slice(0, 4) : 'CHF',
+      balanceBefore: num(r.money.balanceBefore),
+      balanceAfter: num(r.money.balanceAfter),
+      ledgerId: typeof r.money.ledgerId === 'string' ? r.money.ledgerId : null
+    } : null,
+    ...(oldSchema ? { migratedFrom: r.schema || 1 } : (r.migratedFrom ? { migratedFrom: r.migratedFrom } : {})),
     notes: typeof r.notes === 'string' ? r.notes.slice(0, 1000) : ''
   };
 }
@@ -93,9 +114,22 @@ export function recomputeRound(rec) {
       h.blackjack = !!s.blackjack;
     }
     h.doubled = h.doubled || h.actions.some((a) => a.action === 'DOUBLE');
-    const bet = h.bet != null ? h.bet : 1;
-    h.net = h.outcome === 'surrender' ? -bet / 2 : netResult(h.outcome, { bet, doubled: h.doubled, blackjack: h.blackjack, rules: r });
-    h.payout = h.bet != null && h.net != null ? h.net : h.payout;
+    // Einsatz-Einheiten (immer)
+    h.net = h.outcome === 'surrender' ? -0.5 : netResult(h.outcome, { bet: 1, doubled: h.doubled, blackjack: h.blackjack, rules: r });
+    // Geld (nur mit eingegebenem Einsatz; nichts wird erfunden)
+    if (h.bet != null) {
+      if (h.extraBet == null && h.doubled) h.extraBet = h.bet;
+      if (h.payoutSource !== 'manual') {
+        const p = h.outcome === 'surrender' ? Math.round(h.bet * 50) / 100 : computedPayout({ outcome: h.outcome, stake: h.bet, extra: h.extraBet || 0, blackjack: h.blackjack, payoutRule: r.payout });
+        h.payout = p;
+        h.payoutSource = p != null ? 'computed' : null;
+      }
+      h.moneyNet = h.payout != null ? Math.round((h.payout - h.bet - (h.extraBet || 0)) * 100) / 100 : null;
+    } else {
+      if (h.payoutSource !== 'manual') { h.payout = null; h.payoutSource = null; }
+      h.extraBet = null;
+      h.moneyNet = null;
+    }
   }
   const allKnown = rec.hands.every((h) => h.outcome) && rec.hands[0].cards.length >= 2;
   if (!allKnown) rec.status = 'incomplete';
@@ -133,7 +167,7 @@ export function filterRounds(rounds, { text = '', outcome = 'all' } = {}) {
 
 /** Zahlen für Übersicht (nur aus echten Einträgen). */
 export function summarizeRounds(rounds) {
-  const s = { rounds: rounds.length, hands: 0, win: 0, loss: 0, push: 0, open: 0, incomplete: 0, net: 0, netHands: 0 };
+  const s = { rounds: rounds.length, hands: 0, win: 0, loss: 0, push: 0, open: 0, incomplete: 0, net: 0, netHands: 0, moneyHands: 0, staked: 0, moneyNet: 0 };
   for (const r of rounds) {
     if (r.status === 'incomplete') s.incomplete += 1;
     for (const h of r.hands) {
@@ -143,6 +177,7 @@ export function summarizeRounds(rounds) {
       else if (h.outcome === 'push') s.push += 1;
       else s.open += 1;
       if (h.net != null) { s.net += h.net; s.netHands += 1; }
+      if (h.bet != null && h.moneyNet != null) { s.moneyHands += 1; s.staked += h.bet + (h.extraBet || 0); s.moneyNet += h.moneyNet; }
     }
   }
   return s;

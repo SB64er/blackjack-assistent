@@ -28,6 +28,11 @@ import { RoundView } from './views/round-view.js';
 import { YumekoView } from './views/yumeko-view.js';
 import { KnowledgeView } from './views/knowledge-view.js';
 import { VideoView } from './views/video-view.js';
+import { BankrollStore } from './risk/bankroll.js';
+import { SimulationStore } from './yumeko/sim-store.js';
+import { LabView } from './views/lab-view.js';
+import { RiskView } from './views/risk-view.js';
+import { ChatView } from './views/chat-view.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -40,7 +45,7 @@ const test = new TestTracker({ camera, calibration });
 const profiles = new ProfileStore({ settings });
 // Zustand zwischen Ansichten (ohne URL-Änderung)
 class UiState extends Emitter {
-  constructor() { super(); this.editProfileId = null; this.openRoundId = null; this.pendingRound = null; this.knowledgeFilter = null; }
+  constructor() { super(); this.editProfileId = null; this.openRoundId = null; this.pendingRound = null; this.knowledgeFilter = null; this.lastSituation = null; }
   set(key, value) { this[key] = value; this.emit('change', { key }); }
 }
 const ui = new UiState();
@@ -50,6 +55,9 @@ const db = sharedDatabase();
 const archive = new ArchiveStore({ db });
 const knowledge = new KnowledgeStore({ db });
 const yumeko = new Yumeko({ archive, knowledge, profiles, settings });
+// Echtgeld & Risiko (optional) und Simulationen – getrennt von echten Runden gespeichert.
+const bankroll = new BankrollStore({ db });
+const simulations = new SimulationStore({ db });
 
 // Empfehlung des aktiven Profils für die Rundenprotokolle.
 recognition.advise = (cards, up, afterSplit) => {
@@ -73,7 +81,7 @@ recognition.on('round-end', ({ round }) => {
   }).catch((err) => console.warn('[archiv] Runde nicht gespeichert', err));
 });
 
-const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, knowledge, yumeko };
+const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, knowledge, yumeko, bankroll, simulations };
 
 const ROUTES = {
   haupt: MainView,
@@ -87,7 +95,10 @@ const ROUTES = {
   runde: RoundView,
   yumeko: YumekoView,
   wissen: KnowledgeView,
-  video: VideoView
+  video: VideoView,
+  labor: LabView,
+  risiko: RiskView,
+  chat: ChatView
 };
 
 const root = document.getElementById('app');

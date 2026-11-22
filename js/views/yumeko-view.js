@@ -190,6 +190,11 @@ export class YumekoView extends View {
         <button type="button" class="btn btn--secondary" data-action="knowledge-filter">Wissen anzeigen</button>
         <button type="button" class="btn btn--secondary" data-action="knowledge-filter" data-filter="edit">Lerninformationen korrigieren</button>
       </div>
+      <div class="yumeko-actions yumeko-actions--v2">
+        <button type="button" class="btn btn--yumeko" data-nav="labor">Strategie-Labor</button>
+        <button type="button" class="btn btn--secondary" data-nav="risiko">Echtgeld &amp; Risiko${this.ctx.bankroll && this.ctx.bankroll.config.enabled ? ' · aktiv' : ''}</button>
+        <button type="button" class="btn btn--secondary" data-nav="chat">YUMEKO fragen (Chat)</button>
+      </div>
 
       <section class="group">
         <h2 class="group-title">SO LERNT YUMEKO</h2>
@@ -197,6 +202,7 @@ export class YumekoView extends View {
           <div class="phase"><b>1 · Beobachten</b><span>Archivierte Runden (Karten, Aktionen, Ergebnisse, Regeln, Profil) und bestätigte Video-Lernsequenzen.</span></div>
           <div class="phase"><b>2 · Analysieren</b><span>Vergleich jeder Entscheidung mit dem Rechenmodell, Fehler, widersprüchliche Entscheidungen, Datenqualität, Erkennungskorrekturen.</span></div>
           <div class="phase"><b>3 · Lernen</b><span>Erkenntnisse im Wissensspeicher, zusätzliche Kartenprüfung bei oft korrigierten Werten, Strategieentwürfe – aktiv erst nach Prüfung und deiner Bestätigung.</span></div>
+          <div class="phase"><b>4 · Überprüfen</b><span>Strategie-Labor: exakte Mathematik und reproduzierbare Simulationen unter gleichen Bedingungen. Einzelne Gewinne oder Verluste ändern die Strategie nie.</span></div>
         </div>
       </section>
 

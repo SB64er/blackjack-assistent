@@ -5,6 +5,11 @@
 // Ablauf je Runde: Spieler, Dealer offen, Spieler, Dealer verdeckt.
 // Dealer prüft bei Ass/Zehn auf Blackjack (Peek). Split einmal, geteilte Asse
 // erhalten je eine Karte. Neu gemischt wird nach 75 % des Schuhs.
+// Aktionen: Ziehen, Stehen, Verdoppeln, Splitten. Aufgeben gibt es nicht.
+//
+// Ab 0.7.0 zusätzlich: Gewinn-/Verlust-/Push-Quote, Einsatz inkl. Verdoppeln/Split,
+// Ertrag pro ursprünglicher Einsatz-Einheit, längste Verlustserie, grösster
+// Rückgang (Drawdown) und eine Liste der Runden für Tests (record: true).
 import { decide, ACTIONS } from './engine.js';
 import { normalizeRules } from './standard.js';
 
@@ -36,7 +41,7 @@ export class Simulation {
   /**
    * @param {{ rules, overrides?, strategyRules?, seed?, penetration? }} opts
    */
-  constructor({ rules, overrides = null, strategyRules = null, seed = 20261122, penetration = 0.75 }) {
+  constructor({ rules, overrides = null, strategyRules = null, seed = 20261122, penetration = 0.75, stacked = null, record = false }) {
     this.rules = normalizeRules(rules);
     this.overrides = overrides;
     this.strategyRules = strategyRules ? normalizeRules(strategyRules) : this.rules;
@@ -50,6 +55,14 @@ export class Simulation {
     this.sumSq = 0;
     this.shoe = [];
     this.pos = 0;
+    this.stacked = Array.isArray(stacked) ? stacked.slice() : null; // feste Kartenfolge (Tests)
+    this.record = record;
+    this.log = [];
+    this.s = {
+      wins: 0, losses: 0, pushes: 0, hands: 0, blackjacks: 0, doubles: 0, splits: 0, busts: 0,
+      wagered: 0, cum: 0, peak: 0, maxDrawdown: 0, lossStreak: 0, longestLossStreak: 0,
+      winStreak: 0, longestWinStreak: 0, worst: 0, best: 0
+    };
     this._shuffle();
   }
 
@@ -65,6 +78,10 @@ export class Simulation {
   }
 
   _draw() {
+    if (this.stacked) {
+      if (!this.stacked.length) throw new Error('Feste Kartenfolge aufgebraucht.');
+      return { rank: this.stacked.shift(), confident: true };
+    }
     return this.shoe[this.pos++];
   }
 
@@ -73,30 +90,34 @@ export class Simulation {
   }
 
   _playHand(cards, up, afterSplit) {
-    // liefert [{ cards, bet }]
+    // liefert [{ cards, bet, actions }]
     let bet = 1;
+    const actions = [];
     for (;;) {
       const t = total(cards).t;
       if (t >= 21) break;
       const a = this._decide(cards, up, afterSplit);
-      if (a === ACTIONS.STAND || a == null) break;
-      if (a === ACTIONS.DOUBLE) { bet = 2; cards.push(this._draw()); break; }
+      if (a === ACTIONS.STAND || a == null) { actions.push('STAND'); break; }
+      if (a === ACTIONS.DOUBLE) { bet = 2; actions.push('DOUBLE'); cards.push(this._draw()); break; }
       if (a === ACTIONS.SPLIT) {
+        this.s.splits += 1;
         const out = [];
         for (const c of cards) {
           const h = [c, this._draw()];
-          if (c.rank === 'A') out.push({ cards: h, bet: 1 });
-          else out.push(...this._playHand(h, up, true));
+          if (c.rank === 'A') out.push({ cards: h, bet: 1, actions: ['SPLIT'], split: true });
+          else out.push(...this._playHand(h, up, true).map((x) => ({ ...x, actions: ['SPLIT', ...x.actions], split: true })));
         }
         return out;
       }
+      actions.push('HIT');
       cards.push(this._draw());
     }
-    return [{ cards, bet }];
+    if (bet === 2) this.s.doubles += 1;
+    return [{ cards, bet, actions }];
   }
 
   _round() {
-    if (this.pos > this.shoe.length * this.penetration) this._shuffle();
+    if (!this.stacked && this.pos > this.shoe.length * this.penetration) this._shuffle();
     const p = [this._draw()];
     const up = this._draw();
     p.push(this._draw());
@@ -104,8 +125,9 @@ export class Simulation {
     const dealer = [up, hole];
     const pBJ = total(p).t === 21;
     const dBJ = total(dealer).t === 21;
-    if (dBJ) return pBJ ? 0 : -1;
-    if (pBJ) return this.payout;
+    const done = (net, hands, wagered) => ({ net, hands, dealer, wagered });
+    if (dBJ) return done(pBJ ? 0 : -1, [{ cards: p, bet: 1, actions: [], net: pBJ ? 0 : -1 }], 1);
+    if (pBJ) { this.s.blackjacks += 1; return done(this.payout, [{ cards: p, bet: 1, actions: [], net: this.payout, blackjack: true }], 1); }
     const hands = this._playHand(p, up, false);
     let result = 0;
     const live = hands.filter((h) => total(h.cards).t <= 21);
@@ -117,21 +139,38 @@ export class Simulation {
       }
     }
     const dt = total(dealer).t;
+    let wagered = 0;
     for (const h of hands) {
       const pt = total(h.cards).t;
-      if (pt > 21) result -= h.bet;
-      else if (dt > 21 || pt > dt) result += h.bet;
-      else if (pt < dt) result -= h.bet;
+      wagered += h.bet;
+      if (pt > 21) { h.net = -h.bet; this.s.busts += 1; }
+      else if (dt > 21 || pt > dt) h.net = h.bet;
+      else if (pt < dt) h.net = -h.bet;
+      else h.net = 0;
+      result += h.net;
     }
-    return result;
+    return done(result, hands, wagered);
   }
 
   step(n) {
+    const s = this.s;
     for (let i = 0; i < n; i++) {
-      const r = this._round();
+      const rd = this._round();
+      const r = rd.net;
       this.rounds++;
       this.sum += r;
       this.sumSq += r * r;
+      s.hands += rd.hands.length;
+      s.wagered += rd.wagered;
+      if (r > 0) { s.wins += 1; s.winStreak += 1; s.lossStreak = 0; } else if (r < 0) { s.losses += 1; s.lossStreak += 1; s.winStreak = 0; } else { s.pushes += 1; }
+      if (s.lossStreak > s.longestLossStreak) s.longestLossStreak = s.lossStreak;
+      if (s.winStreak > s.longestWinStreak) s.longestWinStreak = s.winStreak;
+      s.cum += r;
+      if (s.cum > s.peak) s.peak = s.cum;
+      if (s.peak - s.cum > s.maxDrawdown) s.maxDrawdown = s.peak - s.cum;
+      if (r < s.worst) s.worst = r;
+      if (r > s.best) s.best = r;
+      if (this.record) this.log.push({ net: r, wagered: rd.wagered, player: rd.hands.map((h) => ({ cards: h.cards.map((c) => c.rank), bet: h.bet, net: h.net, actions: h.actions })), dealer: rd.dealer.map((c) => c.rank) });
     }
     return this.result();
   }
@@ -150,7 +189,48 @@ export class Simulation {
       ev: mean,
       se,
       ci95: [mean - 1.96 * se, mean + 1.96 * se],
-      sd: Math.sqrt(variance)
+      sd: Math.sqrt(variance),
+      // Zusatzstatistik (ab 0.7.0)
+      wins: this.s.wins,
+      losses: this.s.losses,
+      pushes: this.s.pushes,
+      winRate: n ? this.s.wins / n : 0,
+      lossRate: n ? this.s.losses / n : 0,
+      pushRate: n ? this.s.pushes / n : 0,
+      hands: this.s.hands,
+      blackjacks: this.s.blackjacks,
+      doubles: this.s.doubles,
+      splits: this.s.splits,
+      busts: this.s.busts,
+      wagered: this.s.wagered,
+      avgWager: n ? this.s.wagered / n : 0,
+      perInitialUnit: mean,
+      perWagered: this.s.wagered ? this.sum / this.s.wagered : 0,
+      net: this.sum,
+      longestLossStreak: this.s.longestLossStreak,
+      longestWinStreak: this.s.longestWinStreak,
+      expectedLongestLossStreak: n && this.s.losses ? expectedLongestRun(n, this.s.losses / n) : 0,
+      maxDrawdown: this.s.maxDrawdown,
+      worstRound: this.s.worst,
+      bestRound: this.s.best
     };
   }
+}
+
+/** Erwartete Länge der längsten Serie bei n unabhängigen Runden mit Wahrscheinlichkeit q (Näherung). */
+export function expectedLongestRun(n, q) {
+  if (!(q > 0 && q < 1) || n < 2) return 0;
+  return Math.log(n * (1 - q)) / Math.log(1 / q);
+}
+
+/**
+ * Strategien unter GLEICHEN Bedingungen vergleichen: gleiche Tischregeln,
+ * gleicher Startwert (gleiche Mischfolge), gleiche Rundenzahl.
+ * strategies: [{ id, name, overrides, strategyRules }]
+ */
+export function compareStrategies({ rules, strategies, rounds = 10000, seed = 20261122 }) {
+  return strategies.map((st) => {
+    const sim = new Simulation({ rules, overrides: st.overrides || null, strategyRules: st.strategyRules || null, seed });
+    return { id: st.id, name: st.name, ...sim.step(rounds) };
+  });
 }
