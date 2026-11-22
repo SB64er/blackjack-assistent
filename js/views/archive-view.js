@@ -58,8 +58,12 @@ export class ArchiveView extends View {
       const data = JSON.parse(await file.text());
       const res = await this.ctx.archive.importData(data);
       let extra = 0;
+      let money = 0;
+      let sims = 0;
       if (data.yumeko) extra = await this.ctx.knowledge.importData(data.yumeko);
-      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${extra ? `, ${extra} YUMEKO-Einträge` : ''}.` };
+      if (data.bankroll && this.ctx.bankroll) money = await this.ctx.bankroll.importData(data.bankroll);
+      if (data.simulations && this.ctx.simulations) sims = await this.ctx.simulations.importData(data.simulations);
+      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${extra ? `, ${extra} YUMEKO-Einträge` : ''}${money ? `, ${money} Echtgeld-Einträge` : ''}${sims ? `, ${sims} Simulationen` : ''}.` };
     } catch (err) {
       this._notice = { tone: 'warn', text: `Import fehlgeschlagen: ${err.message}` };
     }
@@ -76,9 +80,13 @@ export class ArchiveView extends View {
       case 'open': ui.set('openRoundId', btn.dataset.id); navigate('runde'); break;
       case 'more': this._limit += PAGE; this._renderList(); break;
       case 'export': {
-        const data = await archive.exportData({ yumeko: knowledge.exportData() });
+        const data = await archive.exportData({
+          yumeko: knowledge.exportData(),
+          ...(this.ctx.bankroll ? { bankroll: this.ctx.bankroll.exportData() } : {}),
+          ...(this.ctx.simulations ? { simulations: this.ctx.simulations.exportData() } : {})
+        });
         downloadJson(`bjai-sicherung-${new Date().toISOString().slice(0, 10)}.json`, data);
-        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden und dem YUMEKO-Wissen erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“).` };
+        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden, YUMEKO-Wissen, Echtgeld-Protokoll und Simulationen erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“) – sie enthält Geldbeträge.` };
         this.render();
         break;
       }
@@ -116,7 +124,7 @@ export class ArchiveView extends View {
         <div class="stat"><b>${s.push}</b><span>Push</span></div>
         <div class="stat stat--warn"><b>${s.open}</b><span>Offen</span></div>
       </div>
-      <p class="hint">Netto ${s.net >= 0 ? '+' : ''}${s.net.toFixed(1)} Einsätze aus ${s.netHands} Händen. Ergebnisse hängen stark vom Zufall ab – keine Gewinngarantie. ${esc(storage)}</p>`;
+      <p class="hint">Netto ${s.net >= 0 ? '+' : ''}${s.net.toFixed(1)} Einsätze aus ${s.netHands} Händen.${s.moneyHands ? ` Mit Geldbeträgen: ${s.moneyHands} Hände, Einsatz ${s.staked.toFixed(2)}, netto ${s.moneyNet >= 0 ? '+' : ''}${s.moneyNet.toFixed(2)}.` : ''} Ergebnisse hängen stark vom Zufall ab – keine Gewinngarantie. ${esc(storage)}</p>`;
     this.el.querySelector('[data-slot="filters"]').innerHTML = FILTERS.map(([f, label]) => `<button type="button" data-action="filter" data-f="${f}" aria-pressed="${this._filter === f}">${label}</button>`).join('');
     this._renderList();
     this.el.querySelector('[data-slot="bottom"]').innerHTML = `

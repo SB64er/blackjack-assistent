@@ -1,7 +1,7 @@
-# Blackjack Assistent – PWA (Phase 1–6, Version 0.6.0)
+# Blackjack Assistent – PWA (Phase 1–7, Version 0.7.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
-Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen) bleiben lokal auf dem Gerät.
+Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen) bleiben lokal auf dem Gerät.
 
 ## Struktur
 
@@ -21,13 +21,16 @@ js/calibration/          geometry (reine Mathematik), store (Speichern/Laden),
                          model (Zustand), editor (Rechtecke per Finger)
 js/test/                 Testmodus-Checkliste (7 Schritte)
 js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor,
-                         Spielarchiv, Runde, YUMEKO-Lernzentrum, Wissen, Video lernen
+                         Spielarchiv, Runde, YUMEKO-Lernzentrum, Wissen, Video lernen,
+                         Strategie-Labor (lab), Echtgeld & Risiko (risk), YUMEKO-Chat (chat)
 js/demo/                 Simulierte Spielzustände (Demo-Modus)
 js/game/                 hand (Kartenwerte), card-tracker (Mehrfachbestätigung, keine Doppelzählung),
                          round-state (Live-Runde, verdeckte Karte, Split, Rundenende), settle (Ergebnis W/L/Push)
 js/archive/              round-record (Datensatz, Prüfung, Filter), archive-store (IndexedDB, Export/Import)
-js/yumeko/               knowledge (Wissensspeicher), archive-analysis (Analyse), yumeko (Versionen, Prüfung),
-                         video-learner (Szenenwechsel, Video-Lernsequenzen)
+js/yumeko/               knowledge (Wissensspeicher, Lernverlauf), archive-analysis (Analyse), yumeko (Versionen, Prüfung),
+                         video-learner (Szenenwechsel, Aktionsvorschläge), decision (Strategieintelligenz),
+                         chat (datenbasierte Antworten), sim-store (gespeicherte Simulationen)
+js/risk/                 bankroll (Budget, Saldo, Protokoll, Limits), risk (Risikointelligenz, Schutzregeln)
 js/strategy/             standard (Basisstrategie 4–8 Decks), engine (Entscheidung), profiles (Profilspeicher),
                          ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie)
 js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich),
@@ -84,6 +87,7 @@ npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offlin
 npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright), inkl. Profile
                        # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages),
                        # Phase 6: Live-Runde, Archiv, Korrektur, Export, YUMEKO, Video, Überlauf
+                       # Phase 7: Echtgeld/Limits/Stopp, Labor, Chat, Lernverlauf, Neustart
 ```
 
 ## Voraussetzungen
@@ -275,3 +279,62 @@ Profile: `bjassist.profiles` (Version 2, alte Version 1 wird automatisch umgewan
 - Video lernen mit Videodatei aus „Fotos“/„Dateien“ und mit gefilmtem Bildschirm
 - Speicher bleibt nach Schliessen der Home-Bildschirm-App erhalten
 - Flüssigkeit/Leistung während Live-Erkennung und Videoanalyse
+
+## Phase 7 (Version 0.7.0) – YUMEKO AI 2.0
+
+### Neu
+
+- **Simulations-Engine** (`js/strategy/simulate.js`): endlicher Schuh mit 1–8 Decks, Dealer-Regeln (S17/H17,
+  Peek), Blackjack 3:2/6:5, Ziehen, Stehen, Verdoppeln, Split (einmal, Verdoppeln nach Split je nach Regel),
+  korrekte Abrechnung, Startwert (reproduzierbar). Ausgabe: Runden, Ø Ergebnis, Gewinn-/Verlust-/Push-Quote,
+  Ertrag pro ursprünglicher und pro tatsächlich gesetzter Einheit, Erwartungswert ± 95 %, längste
+  Verlustserie, grösster Drawdown. Kein Aufgeben.
+- **Strategie-Labor** (YUMEKO → Strategie-Labor): Profile und YUMEKO-Entwürfe unter gleichen Bedingungen
+  vergleichen (gleiche Regeln, gleiche Mischfolge, gleiche Rundenzahl). Klar getrennt: exakte Mathematik,
+  Simulation, KI-Hypothese. Ergebnisse speichern (Bereich `simulations`, getrennt von echten Runden).
+- **Echtgeld & Risiko** (YUMEKO → Echtgeld & Risiko, optional): Aktivierung nur nach Bestätigung des
+  Verlusthinweises. Gesamtbudget, Startsaldo, Saldo, Einsätze, Zusatzeinsätze, tatsächliche Auszahlungen,
+  Ein-/Auszahlungen und Korrekturen werden als fortlaufendes Protokoll gespeichert. Limits: max. Einsatz pro
+  Runde, Verlust pro Sitzung, optional pro Tag. Warnung ab 80 %, Stopp beim Erreichen – danach keine
+  Einsatzempfehlung mehr. Während einer Sitzung lassen sich Limits nur senken. Risikoanalyse: Gewinne/Verluste,
+  Netto, Ø Einsatz, längste Verlustserie, Rückgang zum Höchststand, Budgetauslastung, Erwartungswert und
+  Schwankungsbreite.
+- **Schutzregeln** (fest): keine Martingale-/Verdoppelungsstrategie, Warnung bei Einsatzerhöhung nach Verlust,
+  keine automatische Limit-Erhöhung, keine Aufforderung zum Zurückgewinnen, keine Gewinnversprechen, keine
+  automatischen Wetten, kein Zugriff auf Casino-Konten.
+- **Entscheidungssystem**: Strategieintelligenz (`js/yumeko/decision.js`, Karten → Aktion mit Erwartungswerten)
+  und Risikointelligenz (`js/risk/risk.js`, Budget/Limits → weiterspielen oder Stopp) sind getrennt und einzeln
+  getestet. Auf der Hauptansicht steht die Risikoleiste getrennt von der Spielempfehlung.
+- **Spielarchiv** (Schema 2): Einsatz, Zusatzeinsatz, Auszahlung (eingegeben oder aus Einsatz + Ergebnis
+  berechnet und so gekennzeichnet), Netto in Geld, Saldo vor/nach der Runde. Ergebnisse in Einsatz-Einheiten
+  bleiben getrennt. Ohne eingegebenen Einsatz werden keine Beträge berechnet.
+- **YUMEKO-Chat** (YUMEKO → Chat): Antworten nur aus Archiv, Wissensspeicher, Echtgeld-Protokoll, Simulationen und
+  Rechenmodell. Keine Sprachmodell-Anbindung (keine Kosten, kein Schlüssel); unbekannte Fragen werden ehrlich
+  abgelehnt.
+- **Wissensbibliothek**: Lernstufen (beobachtet, Hypothese, geprüft, freigegeben), Spielsituation je Eintrag,
+  Lernverlauf (Bereich `history`), Strategieversionen vergleichen, Wissen separat exportieren/importieren.
+- **Video**: Aktionen aus Kartenänderungen werden vorgeschlagen (Ziehen/Stehen, als „Vorschlag“ markiert),
+  unterstützte Formate werden angezeigt. Texterkennung nur, wenn der Browser einen lokalen Texterkenner
+  (`TextDetector`) hat – auf dem iPad derzeit nicht. Sprache: nicht verfügbar.
+- **Erkennung**: Bei schwachem Licht wird die Weiss-Schwelle angepasst (bei normalem Licht unverändert).
+  Eine neue Karte gleichen Werts, die eine andere überlappt oder weit entfernt liegt, wird nicht mehr als
+  „bewegte“ alte Karte gezählt.
+
+### Speicher (ab 0.7.0)
+
+IndexedDB `bjassist` Version 2: neu `simulations`, `ledger` (Echtgeld-Protokoll), `history` (Lernverlauf);
+Echtgeld-Einstellungen in `meta` (`bankroll`). Alte Bereiche bleiben unverändert. Archiv-Einträge aus 0.6.0
+werden beim Laden neu berechnet (der gespeicherte Eintrag bleibt unverändert). Die JSON-Sicherung enthält
+jetzt auch Echtgeld-Protokoll und Simulationen (Format-Version 2; Version 1 bleibt importierbar).
+
+### Was externe Dienste bräuchte
+
+Sprachtranskription, OCR auf dem iPad, KI-Bildanalyse und ein echtes Sprachmodell für den Chat bräuchten einen
+eigenen Server (Schlüssel nie im öffentlichen Code) und deine ausdrückliche Zustimmung. Nichts davon ist aktiv.
+
+### Nur auf einem echten iPad prüfbar
+
+- Echtgeld-Eingaben und Risikoleiste während einer Live-Runde mit Kamera
+- Kartenerkennung bei schwachem Licht und mit überlappenden Karten
+- Video lernen mit Aktionsvorschlägen (Datei und abgefilmter Bildschirm)
+- Strategie-Labor mit 500 000 Runden (Dauer, Erwärmung des Geräts)

@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.6.0 angezeigt`, (await page.textContent('.footnote')).includes('0.6.0'));
+    check(`${name}: Version 0.7.0 angezeigt`, (await page.textContent('.footnote')).includes('0.7.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -150,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.6.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.7.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -391,12 +391,89 @@ try {
     const { ctx, page, errors } = await newPage(SIZES.iPhone);
     await page.goto(BASE);
     await page.waitForSelector('.screen-main');
-    for (const v3 of ['archiv', 'yumeko', 'wissen', 'video']) {
+    for (const v3 of ['archiv', 'yumeko', 'wissen', 'video', 'labor', 'risiko', 'chat']) {
       await page.evaluate((n) => window.__bj.navigate(n), v3);
       await page.waitForTimeout(200);
       check(`iPhone ${v3}: ohne Überlauf`, !(await overflow(page)));
     }
     check('iPhone: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 12) Phase 7: Strategie-Labor, Echtgeld & Risiko, Chat, Wissensbibliothek
+  {
+    const { ctx, page, errors } = await newPage(SIZES['iPad quer']);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    // Echtgeld-Modus: nur mit Bestätigung
+    await page.evaluate(() => window.__bj.navigate('risiko'));
+    await page.waitForSelector('[data-action="enable"]');
+    check('Echtgeld: deutlicher Verlusthinweis vor Aktivierung', /finanziellen Verlusten/.test(await page.textContent('.danger-box')));
+    await page.click('[data-action="enable"]');
+    check('Echtgeld: ohne Bestätigung nicht aktiviert', await page.evaluate(() => !window.__bj.bankroll.config.enabled));
+    await page.check('input[name="ack"]');
+    await page.click('[data-action="enable"]');
+    await page.waitForSelector('input[name="budget"]');
+    await page.fill('input[name="budget"]', '100');
+    await page.fill('input[name="start"]', '100');
+    await page.click('[data-action="save-setup"]');
+    await page.waitForSelector('input[name="sessionLoss"]');
+    await page.fill('input[name="maxBet"]', '10');
+    await page.fill('input[name="sessionLoss"]', '20');
+    await page.click('[data-action="save-limits"]');
+    await page.waitForTimeout(150);
+    for (let i = 0; i < 2; i++) {
+      await page.fill('[data-draft="stake"]', '10');
+      await page.click('[data-action="outcome"][data-o="loss"]');
+      check(`Echtgeld: Auszahlung als Vorschlag berechnet (Runde ${i + 1})`, (await page.inputValue('[data-draft="payout"]')) === '0');
+      await page.click('[data-action="save-round"]');
+      await page.waitForTimeout(150);
+    }
+    const st = await page.evaluate(() => window.__bj.bankroll.stats());
+    check('Echtgeld: Saldo aus echten Eingaben (100 − 2 × 10 = 80)', st.balance === 80, JSON.stringify(st.balance));
+    check('Echtgeld: Stopp beim Erreichen des Sitzungslimits', /STOPP/.test(await page.textContent('.risk-card')) && /keine weiteren Einsatzempfehlungen/i.test(await page.textContent('.risk-card')));
+    check('Echtgeld: negativer Erwartungswert, Abraten', /rät vom Spiel mit echtem Geld ab/.test(await page.textContent('.risk-card')));
+    await page.fill('input[name="sessionLoss"]', '50');
+    await page.click('[data-action="save-limits"]');
+    await page.waitForTimeout(150);
+    check('Echtgeld: Limit in laufender Sitzung nicht erhöhbar', await page.evaluate(() => window.__bj.bankroll.config.limits.sessionLoss === 20) && /nur gesenkt/.test(await page.textContent('.notice')));
+    check('Echtgeld: ohne Überlauf', !(await overflow(page)));
+    await page.evaluate(() => window.__bj.navigate('haupt'));
+    await page.waitForSelector('.risk-strip');
+    check('Hauptansicht: Risikoleiste getrennt von der Spielempfehlung (STOPP)', /STOPP/.test(await page.textContent('.risk-strip')) && /Spielempfehlung ≠ Empfehlung, Geld einzusetzen/.test(await page.textContent('.risk-strip')));
+    check('Hauptansicht mit Risikoleiste ohne Überlauf', !(await overflow(page)));
+    // Strategie-Labor
+    await page.evaluate(() => window.__bj.navigate('labor'));
+    await page.waitForSelector('[data-action="run"]');
+    await page.selectOption('select[name="rounds"]', '10000');
+    await page.click('[data-action="run"]');
+    await page.waitForSelector('.lab-table', { timeout: 60000 });
+    const rows = await page.locator('.lab-table tbody tr').count();
+    check('Labor: Vergleich Standard vs. YUMEKO unter gleichen Bedingungen', rows === 2);
+    check('Labor: exakte Mathematik und Simulation getrennt ausgewiesen', /Exakte Mathematik/.test(await page.textContent('.lab-table thead')) && /Simulation/.test(await page.textContent('.lab-table thead')));
+    await page.click('[data-action="save"]');
+    await page.waitForFunction(() => window.__bj.simulations.list.length === 1, null, { timeout: 5000 }).catch(() => {});
+    const sims = await page.evaluate(() => ({ sims: window.__bj.simulations.list.length, rounds: window.__bj.archive.rounds.length }));
+    check('Labor: Simulation getrennt gespeichert (nicht im Spielarchiv)', sims.sims === 1 && sims.rounds === 0, JSON.stringify(sims));
+    check('Labor: ohne Überlauf', !(await overflow(page)));
+    // Chat
+    await page.evaluate(() => window.__bj.navigate('chat'));
+    await page.waitForSelector('.chat-form');
+    await page.fill('input[name="q"]', 'Wie hoch waren meine tatsächlichen Verluste?');
+    await page.press('input[name="q"]', 'Enter');
+    await page.waitForSelector('.chat-msg--yumeko');
+    check('Chat: Antwort aus echten Daten (verloren 20.00 CHF)', /verloren 20\.00 CHF/.test(await page.textContent('.chat-msg--yumeko')));
+    check('Chat: ohne Überlauf', !(await overflow(page)));
+    // Wissensbibliothek: Lernverlauf
+    await page.evaluate(() => window.__bj.navigate('wissen'));
+    await page.click('[data-action="cat"][data-cat="history"]');
+    check('Wissen: Lernverlauf sichtbar', /Simulation gespeichert/.test(await page.textContent('.sub-content')));
+    // Neustart: Echtgeld-Daten und Simulation bleiben
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    const kept = await page.evaluate(async () => { await window.__bj.bankroll.ready(); await window.__bj.simulations.ready(); return { b: window.__bj.bankroll.stats().balance, s: window.__bj.simulations.list.length, on: window.__bj.bankroll.config.enabled }; });
+    check('Phase 7: Echtgeld-Protokoll und Simulation nach Neustart erhalten', kept.b === 80 && kept.s === 1 && kept.on, JSON.stringify(kept));
+    check('Phase 7: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 } catch (err) {

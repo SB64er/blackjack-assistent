@@ -4,7 +4,46 @@
 // Jede Erkenntnis ist nachvollziehbar: Inhalt, Ursprung, Datum, Tischregeln,
 // Vertrauensniveau, Prüfstatus und Verweise auf Archivrunden oder Videos.
 import { Emitter } from '../core/events.js';
-import { normalizeRules } from '../strategy/standard.js';
+import { normalizeRules, parseKey, rowLabel, upLabel, standardCode, CODE_LABEL } from '../strategy/standard.js';
+
+export const KNOWLEDGE_FORMAT = 'bjai-yumeko-knowledge';
+export const HISTORY_MAX = 500;
+// Lernstufen (0.7.0): beobachtet -> Hypothese -> mathematisch geprüft -> freigegebene Strategieänderung
+export const STAGE = { observed: 'Beobachtete Daten', hypothesis: 'Unbestätigte Hypothese', verified: 'Mathematisch überprüft', released: 'Freigegebene Strategieänderung' };
+
+/** Lernstufe eines Eintrags (für die Wissensbibliothek). */
+export function stageOf(it) {
+  if (it.category === 'version') return 'released';
+  if (it.category === 'verified' || it.status === STATUS_VERIFIED) return 'verified';
+  if (it.category === 'hypothesis' || it.category === 'rule' || it.status === 'unbestätigt' || it.status === 'widerspricht dem Rechenmodell') return 'hypothesis';
+  return 'observed';
+}
+const STATUS_VERIFIED = 'mathematisch geprüft';
+
+/** Spielsituation aus einem Tabellenschlüssel, z. B. "Hart 16 gegen 10". */
+export function situationFromKey(key) {
+  const k = parseKey(key);
+  if (!k) return null;
+  const up = k.up === 11 ? 'Ass' : upLabel(k.up);
+  const row = k.kind === 'hard' ? `Hart ${k.value}` : (k.kind === 'soft' ? `Weich ${k.value} (${rowLabel(k.kind, k.value)})` : `Paar ${rowLabel(k.kind, k.value)}`);
+  return `${row} gegen ${up}`;
+}
+
+/** Zwei Strategieversionen vergleichen (Zelle für Zelle). Reine Funktion. */
+export function compareVersions(a, b) {
+  const keys = new Set([...Object.keys(a.overrides || {}), ...Object.keys(b.overrides || {})]);
+  const rows = [];
+  for (const key of [...keys].sort()) {
+    const k = parseKey(key);
+    const std = k ? standardCode(k.kind, k.value, k.up, a.rules) : null;
+    const ca = (a.overrides || {})[key] || std;
+    const cb = (b.overrides || {})[key] || std;
+    if (ca !== cb) rows.push({ key, situation: situationFromKey(key) || key, a: CODE_LABEL[ca] || ca, b: CODE_LABEL[cb] || cb });
+  }
+  const evA = a.verification ? a.verification.evVersion : null;
+  const evB = b.verification ? b.verification.evVersion : null;
+  return { rows, evA, evB, diff: evA != null && evB != null ? evB - evA : null };
+}
 
 export const CATEGORIES = {
   experience: 'Spielerfahrungen',
@@ -59,6 +98,8 @@ export function validateItem(x) {
       videos: Array.isArray(x.refs && x.refs.videos) ? x.refs.videos.filter((s) => typeof s === 'string').slice(0, 50) : []
     },
     data: x.data && typeof x.data === 'object' ? x.data : {},
+    situation: typeof x.situation === 'string' && x.situation ? x.situation.slice(0, 120)
+      : (x.data && x.data.cell && x.data.cell.key ? situationFromKey(x.data.cell.key) : null),
     auto: !!x.auto,          // von YUMEKO erzeugt (wird bei neuer Analyse aktualisiert)
     edited: !!x.edited       // vom Benutzer korrigiert (wird nicht mehr automatisch überschrieben)
   };
@@ -71,6 +112,7 @@ export class KnowledgeStore extends Emitter {
     this.videos = [];
     this.versions = [];
     this.meta = {};
+    this.history = [];
     this.error = null;
     this._ready = Promise.resolve(db).then(async (d) => {
       this.db = d;
@@ -91,7 +133,23 @@ export class KnowledgeStore extends Emitter {
     const meta = await this.db.get('meta', 'yumeko');
     this.meta = meta || { id: 'yumeko', dismissed: [] };
     if (!Array.isArray(this.meta.dismissed)) this.meta.dismissed = [];
+    try {
+      this.history = (await this.db.all('history')).filter((h) => h && h.id && h.at).sort((a, b) => b.at.localeCompare(a.at));
+    } catch { this.history = []; }
     this.emit('change', { type: 'load' });
+  }
+
+  /** Lernverlauf: nachvollziehbare Liste, was wann gelernt, geprüft, korrigiert oder gelöscht wurde. */
+  async logHistory(type, text, ref = null) {
+    if (!this.db) return null;
+    const e = { id: `h_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: nowIso(), type: String(type).slice(0, 30), text: String(text).slice(0, 400), ref };
+    try {
+      await this.db.put('history', e);
+      this.history = [e, ...this.history];
+      for (const old of this.history.slice(HISTORY_MAX)) await this.db.delete('history', old.id);
+      this.history = this.history.slice(0, HISTORY_MAX);
+    } catch (err) { console.warn('[wissen] Verlauf nicht gespeichert', err); }
+    return e;
   }
 
   byCategory(cat) { return this.items.filter((i) => i.category === cat); }
@@ -132,7 +190,10 @@ export class KnowledgeStore extends Emitter {
     const cur = this.get(id);
     if (!cur) throw new Error('Erkenntnis nicht gefunden.');
     const next = { ...cur, ...patch, confidence: { ...cur.confidence, ...(patch.confidence || {}) }, edited: true };
-    return this.upsert(next);
+    const v = await this.upsert(next);
+    await this.logHistory('korrektur', `Korrigiert: ${v.content.slice(0, 160)}`, id);
+    this.emit('change', { type: 'history' });
+    return v;
   }
 
   /** Löschen. Automatisch erzeugte Einträge werden bei neuen Analysen nicht wieder angelegt. */
@@ -142,6 +203,7 @@ export class KnowledgeStore extends Emitter {
     await this.db.delete('knowledge', id);
     this.items = this.items.filter((i) => i.id !== id);
     if (cur && cur.auto && !this.meta.dismissed.includes(id)) await this.saveMeta({ dismissed: [...this.meta.dismissed, id].slice(-2000) });
+    if (cur) await this.logHistory('löschung', `Gelöscht: ${cur.content.slice(0, 160)}`, id);
     this.emit('change', { type: 'remove', id });
   }
 
@@ -162,6 +224,7 @@ export class KnowledgeStore extends Emitter {
     await this._ready;
     await this.db.put('videos', seq);
     this.videos = [seq, ...this.videos.filter((v) => v.id !== seq.id)];
+    await this.logHistory('video', `Video-Lernsequenz übernommen: ${seq.source} (${(seq.scenes || []).length} Szenen)`, seq.id);
     this.emit('change', { type: 'video', id: seq.id });
     return seq;
   }
@@ -178,7 +241,9 @@ export class KnowledgeStore extends Emitter {
   // --- Strategieversionen ---------------------------------------------------
   async putVersion(v) {
     await this._ready;
+    const prev = this.versions.find((x) => x.id === v.id);
     await this.db.put('versions', v);
+    if (!prev || prev.status !== v.status) await this.logHistory('version', `Strategieversion ${v.number}: ${v.status}`, v.id);
     this.versions = [v, ...this.versions.filter((x) => x.id !== v.id)].sort((a, b) => b.number - a.number);
     this.emit('change', { type: 'version', id: v.id });
     return v;
@@ -193,7 +258,7 @@ export class KnowledgeStore extends Emitter {
 
   /** Alles für die Sicherung. */
   exportData() {
-    return { knowledge: this.items, videos: this.videos, versions: this.versions, meta: this.meta };
+    return { format: KNOWLEDGE_FORMAT, knowledge: this.items, videos: this.videos, versions: this.versions, meta: this.meta, history: this.history };
   }
 
   /** Sicherung einlesen (vorhandene IDs bleiben unverändert). */
@@ -213,7 +278,12 @@ export class KnowledgeStore extends Emitter {
     for (const s of Array.isArray(data && data.versions) ? data.versions : []) {
       if (s && typeof s.id === 'string' && Number.isInteger(s.number) && !haveS.has(s.id) && !this.versions.some((x) => x.number === s.number)) { await this.db.put('versions', s); added += 1; }
     }
+    const haveH = new Set(this.history.map((h) => h.id));
+    for (const h of Array.isArray(data && data.history) ? data.history : []) {
+      if (h && typeof h.id === 'string' && typeof h.at === 'string' && !haveH.has(h.id)) await this.db.put('history', { id: h.id, at: h.at, type: String(h.type || '').slice(0, 30), text: String(h.text || '').slice(0, 400), ref: h.ref ?? null });
+    }
     await this._load();
+    if (added) await this.logHistory('import', `${added} Einträge importiert`);
     return added;
   }
 }

@@ -101,11 +101,19 @@ export class RoundView extends View {
       const [h, i] = el.dataset.ref.split(':').map(Number);
       const val = el.value;
       await this._save((r) => { r.hands[h].actions[i].action = val; r.hands[h].actions[i].inferred = false; if (val === 'DOUBLE') r.hands[h].doubled = true; }, `Aktion Hand ${h + 1}: ${ACTION_TEXT[val]}`);
-    } else if (el.name === 'bet') {
+    } else if (['bet', 'extraBet', 'payout'].includes(el.name)) {
+      // Geldbeträge: nur tatsächliche, selbst eingegebene Werte (nichts wird erfunden).
       const h = Number(el.dataset.hand);
       const v = el.value.trim() === '' ? null : Number(el.value.replace(',', '.'));
-      if (v != null && !(v >= 0)) { this._notice = { tone: 'warn', text: 'Bitte einen gültigen Einsatz eingeben.' }; this.render(); return; }
-      await this._save((r) => { r.hands[h].bet = v; }, `Einsatz Hand ${h + 1}: ${v ?? '–'}`);
+      const label = { bet: 'Einsatz', extraBet: 'Zusatzeinsatz', payout: 'Auszahlung' }[el.name];
+      if (v != null && !(v >= 0)) { this._notice = { tone: 'warn', text: `Bitte einen gültigen Betrag für „${label}“ eingeben.` }; this.render(); return; }
+      const hands = [];
+      hands[h] = { [el.name]: v };
+      try {
+        await this.ctx.archive.setMoney(rec.id, { hands }, `${label} Hand ${h + 1}: ${v ?? '–'}`);
+        this._notice = { tone: 'ok', text: `${label} gespeichert.` };
+      } catch (err) { this._notice = { tone: 'warn', text: err.message }; }
+      this.render();
     } else if (el.name === 'notes') {
       await this._save((r) => { r.notes = el.value; }, 'Notiz');
     }
@@ -142,8 +150,13 @@ export class RoundView extends View {
           ${['win', 'loss', 'push'].map((o) => `<button type="button" class="${h.outcome === o ? 'is-on' : ''} outcome-btn outcome-btn--${o}" data-action="outcome" data-hand="${hi}" data-outcome="${o}">${OUTCOME_LABEL[o]}</button>`).join('')}
           ${h.outcomeSource === 'manual' ? `<button type="button" class="outcome-btn" data-action="outcome" data-hand="${hi}" data-outcome="auto">Automatisch</button>` : ''}
         </div>
-        <p class="hint">${h.outcome ? `${esc(h.outcome === 'surrender' ? 'Aufgegeben (alte Daten)' : OUTCOME_LABEL[h.outcome])} · ${h.outcomeSource === 'manual' ? 'manuell bestätigt' : 'automatisch'}` : 'Ergebnis offen'}${h.outcomeReason ? ` – ${esc(h.outcomeReason)}` : ''}${h.net != null ? ` · Netto ${h.net >= 0 ? '+' : ''}${h.net}${h.bet != null ? '' : ' Einsätze'}` : ''}</p>
-        <label class="field field--inline"><span>Einsatz (optional)</span><input name="bet" data-hand="${hi}" inputmode="decimal" value="${h.bet ?? ''}" placeholder="z. B. 10"></label>
+        <p class="hint">${h.outcome ? `${esc(h.outcome === 'surrender' ? 'Aufgegeben (alte Daten)' : OUTCOME_LABEL[h.outcome])} · ${h.outcomeSource === 'manual' ? 'manuell bestätigt' : 'automatisch'}` : 'Ergebnis offen'}${h.outcomeReason ? ` – ${esc(h.outcomeReason)}` : ''}${h.net != null ? ` · ${h.net >= 0 ? '+' : ''}${h.net} Einsätze` : ''}</p>
+        <div class="form-grid">
+          <label class="field"><span>Tatsächlicher Einsatz</span><input name="bet" data-hand="${hi}" inputmode="decimal" value="${h.bet ?? ''}" placeholder="optional"></label>
+          <label class="field"><span>Zusatzeinsatz (Verdoppeln)</span><input name="extraBet" data-hand="${hi}" inputmode="decimal" value="${h.extraBet ?? ''}" placeholder="${h.doubled && h.bet != null ? h.bet : '0'}"></label>
+          <label class="field"><span>Auszahlung inkl. Einsatz</span><input name="payout" data-hand="${hi}" inputmode="decimal" value="${h.payoutSource === 'manual' && h.payout != null ? h.payout : ''}" placeholder="${h.payout != null ? `berechnet: ${h.payout}` : 'optional'}"></label>
+        </div>
+        ${h.bet != null ? `<p class="hint">Geld: Einsatz ${h.bet}${h.extraBet ? ` + ${h.extraBet}` : ''}, Auszahlung ${h.payout ?? '–'}${h.payoutSource === 'computed' ? ' (aus Ergebnis berechnet – bei Abweichung tatsächlichen Betrag eintragen)' : (h.payoutSource === 'manual' ? ' (eingegeben)' : '')}, netto ${h.moneyNet != null ? `${h.moneyNet >= 0 ? '+' : ''}${h.moneyNet}` : '–'}</p>` : '<p class="hint">Ohne Einsatz werden keine Geldbeträge berechnet.</p>'}
       </section>`).join('');
 
     content.innerHTML = `
@@ -151,6 +164,7 @@ export class RoundView extends View {
       <p class="lead">${esc(fmtDateTime(rec.startedAt))} · <span class="status-chip status-chip--${rec.status}">${esc(STATUS_TEXT[rec.status])}</span></p>
       <p class="meta">${esc(rec.profile ? `Profil: ${rec.profile.name}${rec.profile.version ? ` (v${rec.profile.version})` : ''}` : 'Profil unbekannt')} · ${esc(rulesText(rec.rules))}</p>
       <p class="meta">Erkennung: ${rc && rc.minScore != null ? `geringste Sicherheit ${Math.round(rc.minScore * 100)} %` : '–'}${rc && rc.frames ? ` · ${rc.unsureFrames} von ${rc.frames} Auswertungen unsicher` : ''} · ${rec.confirmation === 'manual' ? 'manuell bestätigt' : 'automatisch erkannt'}</p>
+      ${rec.money ? `<p class="meta">Echtgeld: Saldo vor der Runde ${rec.money.balanceBefore ?? '–'} → nach der Runde ${rec.money.balanceAfter ?? '–'} ${esc(rec.money.currency)}</p>` : ''}
       <section class="group">
         <h2 class="group-title">DEALER · ${rec.dealer.total ?? '–'}${rec.dealer.final ? ' (Endstand)' : ''}</h2>
         <div class="mini-cards">${rec.dealer.cards.map((c, i) => cardBtn(c, 'dealer', i)).join('')}${addBtn('dealer')}</div>

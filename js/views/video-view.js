@@ -8,7 +8,7 @@ import { ICONS, esc } from '../core/dom.js';
 import { CameraState } from '../camera/camera-service.js';
 import { analyzeRegion } from '../recognition/analyzer.js';
 import { RANKS } from '../game/hand.js';
-import { SceneDetector, VIDEO_FEATURES, scaleFreeTemplates, newSequenceId, UNSURE_SCORE } from '../yumeko/video-learner.js';
+import { SceneDetector, videoFeatures, scaleFreeTemplates, newSequenceId, UNSURE_SCORE, inferActions, textDetectorAvailable, supportedVideoFormats } from '../yumeko/video-learner.js';
 
 const MAX_SIDE = 960;
 const SAMPLE_MS = 500;      // Kamera: 2 Bilder pro Sekunde
@@ -60,7 +60,8 @@ export class VideoView extends View {
         <div data-slot="scenes"></div>
         <section class="group">
           <h2 class="group-title">FUNKTIONEN</h2>
-          <ul class="feature-list">${VIDEO_FEATURES.map((f) => `<li class="${f.status === 'verfügbar' ? 'is-ok' : 'is-missing'}"><b>${esc(f.label)}</b><span class="feature-status">${esc(f.status)}</span><small>${esc(f.note)}</small></li>`).join('')}</ul>
+          <ul class="feature-list">${videoFeatures().map((f) => `<li class="${f.status === 'verfügbar' ? 'is-ok' : 'is-missing'}"><b>${esc(f.label)}</b><span class="feature-status">${esc(f.status)}</span><small>${esc(f.note)}</small></li>`).join('')}</ul>
+          <p class="hint" data-slot="formats"></p>
           <p class="hint">Datenschutz: Bilder werden nur im Arbeitsspeicher ausgewertet – nicht gespeichert und an niemanden gesendet. Gespeichert werden nur die übernommenen Kartenwerte und Zeitstempel.</p>
         </section>
       </div>
@@ -68,6 +69,10 @@ export class VideoView extends View {
       <input type="file" accept="video/*" data-slot="file" hidden>`;
     this.stage = this.el.querySelector('[data-slot="stage"]');
     this.fileVideo = this.el.querySelector('[data-slot="file-video"]');
+    const fmts = supportedVideoFormats(this.fileVideo);
+    this.el.querySelector('[data-slot="formats"]').textContent = `Unterstützte Videoformate in diesem Browser: ${fmts.length ? fmts.join(', ') : 'unbekannt'}. Ausgewertet wird, was der Browser abspielen kann.`;
+    this.texts = [];
+    this._textAt = -10;
     camera.attach(this.stage);
     this.el.addEventListener('click', (e) => this._onClick(e));
     this.el.addEventListener('change', (e) => this._onChange(e));
@@ -102,6 +107,7 @@ export class VideoView extends View {
     const img = this._c2d.getImageData(0, 0, w, h);
     const res = analyzeRegion(img.data, w, h, { sx: 0, sy: 0, scale, frameW: vw, frameH: vh }, scaleFreeTemplates(this.ctx.templates.items));
     const cards = res.cards.map((c) => ({ rank: c.rank, score: c.score, box: c.box }));
+    this._detectText();
     // Unsichere Treffer ebenfalls aufnehmen (gekennzeichnet), wenn sie keine sichere Karte überdecken.
     for (const c of res.candidates) {
       if (!c.match || c.match.status !== 'unsure' || !c.match.rank || c.match.rank === 'X') continue;
@@ -112,12 +118,32 @@ export class VideoView extends View {
     return cards;
   }
 
+  // Eingeblendete Texte – nur mit lokalem Texterkenner des Browsers (kein Upload), höchstens alle 2 s.
+  _detectText() {
+    if (!textDetectorAvailable() || this._textBusy) return;
+    const t = this._timeNow ? this._timeNow() : 0;
+    if (t - this._textAt < 2) return;
+    this._textAt = t;
+    this._textBusy = true;
+    try {
+      if (!this._textDetector) this._textDetector = new globalThis.TextDetector();
+      this._textDetector.detect(this._canvas).then((found) => {
+        for (const f of found || []) {
+          const text = String(f.rawValue || '').trim();
+          if (text.length >= 2 && !this.texts.some((x) => x.text === text)) this.texts.push({ t, text: text.slice(0, 200) });
+        }
+      }).catch(() => {}).finally(() => { this._textBusy = false; });
+    } catch { this._textBusy = false; }
+  }
+
   _startRecording() {
     const { camera } = this.ctx;
     if (camera.state !== CameraState.ACTIVE) { this._say('warn', 'Bitte zuerst die Kamera starten.'); this.render(); return; }
     this.detector = new SceneDetector();
     this.recording = true;
+    this.texts = [];
     this._t0 = performance.now();
+    this._timeNow = () => (performance.now() - this._t0) / 1000;
     this._timer = setInterval(() => {
       if (document.hidden || camera.state !== CameraState.ACTIVE) return;
       const t = (performance.now() - this._t0) / 1000;
@@ -130,7 +156,7 @@ export class VideoView extends View {
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
     if (this.recording && this.detector) {
-      this.scenes = this.detector.finish((performance.now() - this._t0) / 1000);
+      this.scenes = inferActions(this.detector.finish((performance.now() - this._t0) / 1000));
       this.sourceLabel = 'Kamera (abgefilmtes Video)';
     }
     this.recording = false;
@@ -155,6 +181,9 @@ export class VideoView extends View {
     if (!(v.duration > 0) || !Number.isFinite(v.duration)) { this._say('warn', 'Die Videolänge ist unbekannt – Auswertung nicht möglich.'); this.render(); return; }
     v.pause();
     this.scanning = true;
+    this.texts = [];
+    this._textAt = -10;
+    this._timeNow = () => v.currentTime;
     const det = new SceneDetector();
     const seek = (t) => new Promise((resolve) => {
       const done = () => { v.removeEventListener('seeked', done); resolve(); };
@@ -168,7 +197,7 @@ export class VideoView extends View {
       this.progress = t / v.duration;
       if (Math.round(t / SEEK_STEP) % 6 === 0) this._renderControls();
     }
-    this.scenes = det.finish(v.duration);
+    this.scenes = inferActions(det.finish(v.duration));
     this.sourceLabel = `Videodatei: ${this.fileName}`;
     this.scanning = false;
     this._say(this.scenes.length ? 'ok' : 'warn', this.scenes.length ? `${this.scenes.length} Szenen erkannt. Bitte prüfen und korrigieren.` : 'Keine Karten erkannt. Passen die angelernten Muster zu diesem Video?');
@@ -232,7 +261,8 @@ export class VideoView extends View {
           id: newSequenceId(),
           source: this.sourceLabel || 'Video',
           createdAt: new Date().toISOString(),
-          scenes: chosen.map((s) => ({ t0: s.t0, t1: s.t1, action: s.action || null, unsure: s.cards.some((c) => c.unsure), corrected: !!s.corrected, cards: s.cards.map((c) => ({ rank: c.rank, role: c.role, unsure: !!c.unsure, corrected: !!c.corrected, score: c.score })) }))
+          texts: (this.texts || []).slice(0, 50),
+          scenes: chosen.map((s) => ({ t0: s.t0, t1: s.t1, action: s.action || null, actionSuggested: !!s.actionSuggested, unsure: s.cards.some((c) => c.unsure), corrected: !!s.corrected, cards: s.cards.map((c) => ({ rank: c.rank, role: c.role, unsure: !!c.unsure, corrected: !!c.corrected, score: c.score })) }))
         };
         try {
           const items = await yumeko.learnFromSequence(seq);
@@ -252,7 +282,9 @@ export class VideoView extends View {
   _onChange(e) {
     const el = e.target;
     if (el.name === 'scene-action') {
-      this.scenes[Number(el.dataset.scene)].action = el.value || null;
+      const sc = this.scenes[Number(el.dataset.scene)];
+      sc.action = el.value || null;
+      sc.actionSuggested = false;
     }
   }
 
@@ -311,7 +343,7 @@ export class VideoView extends View {
             </span>`).join('')}
           <button type="button" class="mini-card mini-card--add" data-action="add-card" data-scene="${si}" aria-label="Karte ergänzen">+</button>
         </div>
-        <label class="field field--inline"><span>Gezeigte Aktion</span>
+        <label class="field field--inline"><span>Gezeigte Aktion${s.actionSuggested ? ' <small class="kind kind--assume">Vorschlag</small>' : ''}</span>
           <select name="scene-action" data-scene="${si}">${ACTIONS.map(([v, l]) => `<option value="${v}" ${(s.action || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         </label>
       </article>`).join('');
@@ -320,6 +352,7 @@ export class VideoView extends View {
         <h2 class="group-title">ERKANNTE SZENEN</h2>
         <p class="group-help">Kartenwert antippen zum Korrigieren, „Dealer/Spieler“ antippen zum Wechseln. Gezeigte Aktion wählen, falls im Video zu sehen. Erst „Lernsequenz übernehmen“ speichert etwas.</p>
         ${scenes}
+        ${this.texts && this.texts.length ? `<p class="hint"><b>Erkannte Texte (lokal):</b> ${this.texts.slice(0, 10).map((x) => `${fmt(x.t)} „${esc(x.text)}“`).join(' · ')}</p>` : ''}
         <button type="button" class="btn btn--yumeko" data-action="adopt">Lernsequenz übernehmen</button>
       </section>` : '';
 

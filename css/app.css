@@ -1,4 +1,4 @@
-/* Blackjack Assistent – dunkles, minimalistisches Design (Phase 1–6) */
+/* Blackjack Assistent – dunkles, minimalistisches Design (Phase 1–7) */
 
 :root {
   --bg: #0B0D10;
@@ -907,7 +907,7 @@ html.is-standalone, html.is-standalone body { background: var(--bg); }
 .yumeko-mark { color: var(--yumeko); font-size: 20px; }
 .yumeko-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .yumeko-actions .btn--primary { grid-column: 1 / -1; }
-.phase-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.phase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .phase { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
 .phase span { font-size: 13px; color: var(--text-2); line-height: 1.4; }
 @media (max-width: 700px) { .phase-grid { grid-template-columns: 1fr; } }
@@ -957,3 +957,69 @@ html.is-standalone, html.is-standalone body { background: var(--bg); }
 .role-btn--player { color: #A7F3D0; border-color: rgba(52,211,153,.5); }
 .sub-content > [data-slot] { display: flex; flex-direction: column; gap: 14px; }
 .sub-content > [data-slot]:empty { display: none; }
+
+/* ===== Phase 7 (0.7.0): Strategie-Labor, Echtgeld & Risiko, Chat, Wissensbibliothek ===== */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.form-grid .field input, .form-grid .field select { width: 100%; box-sizing: border-box; }
+.notice--info { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); }
+.notice--info svg { color: var(--muted); }
+.yumeko-actions--v2 { margin-top: 8px; }
+.yumeko-actions--v2 .btn--yumeko { grid-column: 1 / -1; }
+
+/* Risiko */
+.risk-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--border-strong); background: var(--surface); }
+.risk-card--ok { border-color: rgba(52,211,153,.5); }
+.risk-card--warn { border-color: var(--warn); background: var(--warn-bg); }
+.risk-card--stop { border: 2px solid var(--danger); background: rgba(248,113,113,.12); }
+.risk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.risk-level { font-weight: 700; font-size: 17px; }
+.risk-stop { color: var(--danger); font-size: 22px; letter-spacing: .08em; }
+.risk-msg { margin: 0; line-height: 1.45; font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
+.risk-msg--stop { color: #FECACA; font-weight: 600; }
+.risk-msg--warn { color: #EDE6C6; }
+.risk-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: calc(100% - 2 * max(12px, var(--safe-left))); margin: 6px auto 0; box-sizing: border-box; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+.risk-strip span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.risk-strip small { flex-basis: 100%; color: var(--muted); }
+.risk-strip--warn { border-color: var(--warn); background: var(--warn-bg); }
+.risk-strip--warn b { color: var(--warn); }
+.risk-strip--stop { border: 2px solid var(--danger); background: rgba(248,113,113,.14); }
+.risk-strip--stop b { color: var(--danger); letter-spacing: .06em; }
+.risk-strip--ok b { color: var(--ok); }
+
+/* Labor */
+.kind-legend { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 10px; align-items: start; font-size: 13px; color: var(--text-2); }
+.kind-legend .kind { justify-self: start; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; }
+.table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; }
+.lab-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
+.lab-table th, .lab-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.lab-table thead th { color: var(--muted); font-weight: 600; background: var(--surface-2); }
+.lab-table tbody th { text-align: left; }
+.lab-table tbody th small, .lab-table td small { display: block; color: var(--muted); font-weight: 400; }
+.kind--stage-observed { background: var(--surface-2); color: var(--text-2); }
+.kind--stage-hypothesis { background: var(--warn-bg); color: var(--warn); }
+.kind--stage-verified { background: rgba(52,211,153,.12); color: var(--ok); }
+.kind--stage-released { background: var(--yumeko-bg); color: var(--yumeko); }
+
+/* Verlauf / Protokoll */
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.history-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; overflow-wrap: anywhere; }
+
+/* Chat */
+.chat-log { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
+.chat-msg { max-width: 92%; padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.chat-msg p { margin: 0 0 4px; }
+.chat-msg p:last-of-type { margin-bottom: 0; }
+.chat-msg--user { align-self: flex-end; background: var(--text); color: var(--bg); border-bottom-right-radius: 4px; }
+.chat-msg--yumeko { align-self: flex-start; background: var(--surface); border: 1px solid rgba(245,181,68,.35); border-bottom-left-radius: 4px; }
+.chat-who { display: block; font-size: 12px; font-weight: 700; color: var(--yumeko); margin-bottom: 4px; letter-spacing: .04em; }
+.chat-basis { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.chat-form { display: flex; gap: 8px; }
+.chat-form input { flex: 1 1 auto; min-width: 0; min-height: 48px; font-size: 16px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); }
+.chat-form .btn { width: auto; flex: 0 0 auto; margin-top: 0; padding: 0 18px; }
+ul.ev-list { display: flex; flex-direction: column; gap: 6px; list-style: none; padding: 0; }
+ul.ev-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+ul.ev-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+ul.ev-list li > span { min-width: 0; color: var(--text-2); overflow-wrap: anywhere; }
+ul.ev-list li > b { text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; max-width: 55%; overflow-wrap: anywhere; }
+.segmented--3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
