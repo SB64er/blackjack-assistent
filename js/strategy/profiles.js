@@ -24,6 +24,10 @@
 //   "YUMEKO AI (gesichert)" erhalten, damit sich keine Empfehlung ändert.
 //   War es aktiv und ohne eigene Tabelle, wird die Standardstrategie aktiv
 //   (gleiche Empfehlungen, denn ohne Tabelle nutzte YUMEKO die Standardstrategie).
+// - 0.10.0: Profil "Yumeko" (Typ 'yumeko-ai', ID 'yumeko-ai') der neuen Yumeko-KI. Es wird erst
+//   angelegt, wenn es im Lernzentrum aktiviert wird. Gesperrt wie die Standardstrategie
+//   (keine eigene Tabelle, nicht löschbar), nutzt vorerst die Standardstrategie.
+//   Bewusst ein anderer Typ als das frühere 'yumeko', das beim Laden entfernt wird.
 // - Das aktive Profil kann erst gelöscht werden, wenn ein anderes aktiv ist.
 // - Migration 1 -> 2: Aufgeben-Codes (Rh/Rs/Rp) werden in die Aktion ohne Aufgeben
 //   übersetzt; die alten Werte bleiben in data.legacySurrender nachvollziehbar.
@@ -37,13 +41,18 @@ export const PROFILES_KEY = 'strategyProfiles';
 export const PROFILES_VERSION = 2;
 export const STANDARD_ID = 'standard';
 export const PROFILE_TYPES = ['standard', 'custom', 'ai'];
-export const TYPE_LABEL = { standard: 'Standard', custom: 'Benutzerdefiniert', ai: 'KI-Strategie' };
-const BUILTIN = new Set([STANDARD_ID]);
+export const TYPE_LABEL = { standard: 'Standard', custom: 'Benutzerdefiniert', ai: 'KI-Strategie', 'yumeko-ai': 'Yumeko' };
+// Neues Profil der Yumeko-KI (ab 0.10.0, Lernzentrum).
+export const YUMEKO_ID = 'yumeko-ai';
+export const YUMEKO_TYPE = 'yumeko-ai';
+// Gesperrte Typen: Tabelle, Name und Regeln nicht veränderbar, nicht löschbar.
+const LOCKED_TYPES = new Set(['standard', YUMEKO_TYPE]);
+export function isLockedProfile(p) { return !!p && LOCKED_TYPES.has(p.type); }
 // Früheres eingebautes Profil (bis 0.8.0). Wird nur noch gelesen, um es zu sichern und zu entfernen.
 export const LEGACY_YUMEKO_ID = 'yumeko';
 export const LEGACY_YUMEKO_KEY = 'legacy.yumekoProfile';
 export const YUMEKO_SAVED_ID = 'yumeko-gesichert';
-const READABLE_TYPES = [...PROFILE_TYPES, 'yumeko'];
+const READABLE_TYPES = [...PROFILE_TYPES, YUMEKO_TYPE, 'yumeko'];
 const MAX_NAME = 60;
 const MAX_DESC = 500;
 
@@ -68,6 +77,21 @@ export function standardProfile(tableRules, at = nowIso()) {
     name: 'Standardstrategie',
     description: 'Bewährte Basisstrategie (4–8 Decks), passt sich automatisch den Tischregeln an. Eingebaut und nicht veränderbar.',
     type: 'standard',
+    rules: normalizeRules(tableRules),
+    settings: { followTableRules: true },
+    overrides: {},
+    data: {},
+    createdAt: at,
+    updatedAt: at
+  };
+}
+
+export function yumekoProfile(tableRules, at = nowIso()) {
+  return {
+    id: YUMEKO_ID,
+    name: 'Yumeko',
+    description: 'Profil der neuen Yumeko-KI aus dem Lernzentrum. Yumeko lernt noch nichts – bis dahin nutzt dieses Profil die Standardstrategie. Gesperrt und nicht veränderbar.',
+    type: YUMEKO_TYPE,
     rules: normalizeRules(tableRules),
     settings: { followTableRules: true },
     overrides: {},
@@ -152,6 +176,13 @@ export function migrate(raw, tableRules) {
   const std = standardProfile(tableRules, idx >= 0 ? out.profiles[idx].createdAt : undefined);
   if (idx >= 0) out.profiles[idx] = std;
   else out.profiles.unshift(std);
+  // Yumeko-Profil (falls angelegt): nur mit gültiger ID, Inhalt fest (Standardstrategie).
+  for (let i = out.profiles.length - 1; i >= 0; i--) {
+    const p = out.profiles[i];
+    if (p.type !== YUMEKO_TYPE) continue;
+    if (p.id !== YUMEKO_ID) { out.invalid.push(p); out.profiles.splice(i, 1); continue; }
+    out.profiles[i] = { ...yumekoProfile(tableRules, p.createdAt), updatedAt: p.updatedAt, data: p.data };
+  }
   // 0.9.0: Früheres Profil "YUMEKO AI" entfernen (Original wird in out.legacyYumeko gesichert).
   const yi = out.profiles.findIndex((p) => p.type === 'yumeko');
   if (yi >= 0) {
@@ -203,6 +234,8 @@ export class ProfileStore extends Emitter {
     settings.on('change', ({ path }) => {
       if (path.startsWith('rules')) {
         this.get(STANDARD_ID).rules = normalizeRules(settings.get('rules'));
+        const y = this.get(YUMEKO_ID);
+        if (y) y.rules = normalizeRules(settings.get('rules'));
         this.emit('change', { type: 'rules' });
       }
     });
@@ -304,6 +337,7 @@ export class ProfileStore extends Emitter {
     const p = this.get(id);
     if (!p) throw new ProfileError('not-found', 'Profil nicht gefunden.');
     if (p.type === 'standard') throw new ProfileError('locked', 'Die eingebaute Standardstrategie kann nicht verändert werden. Dupliziere sie, um eine eigene Version zu erstellen.');
+    if (p.type === YUMEKO_TYPE) throw new ProfileError('locked', 'Das Yumeko-Profil ist gesperrt. Dupliziere es, um eine eigene Version zu erstellen.');
     return p;
   }
 
@@ -377,9 +411,9 @@ export class ProfileStore extends Emitter {
     return this.create({
       name: name || `${src.name} (Kopie)`,
       description: src.description,
-      type: BUILTIN.has(src.id) ? 'custom' : src.type,
+      type: isLockedProfile(src) ? 'custom' : src.type,
       rules: src.settings.followTableRules ? this._tableRules() : src.rules,
-      followTableRules: BUILTIN.has(src.id) ? true : src.settings.followTableRules,
+      followTableRules: isLockedProfile(src) ? true : src.settings.followTableRules,
       overrides: { ...src.overrides },
       data: JSON.parse(JSON.stringify(src.data || {}))
     });
@@ -394,10 +428,34 @@ export class ProfileStore extends Emitter {
     });
   }
 
+  // --- Yumeko (Lernzentrum) ---------------------------------------------
+
+  get yumeko() { return this.get(YUMEKO_ID); }
+  get yumekoActive() { return this.state.activeId === YUMEKO_ID; }
+
+  /** Yumeko-Profil anlegen (falls nötig) und aktivieren. Liefert die ID des vorher aktiven Profils. */
+  activateYumeko() {
+    const previous = this.state.activeId;
+    if (previous === YUMEKO_ID) return previous;
+    this._commit('activate', () => {
+      if (!this.get(YUMEKO_ID)) this.state.profiles.push(yumekoProfile(this._tableRules()));
+      this.state.activeId = YUMEKO_ID;
+    });
+    return previous;
+  }
+
+  /** Yumeko ausschalten: zurück zum angegebenen (vorherigen) Profil, sonst Standardstrategie. */
+  deactivateYumeko(previousId = null) {
+    if (this.state.activeId !== YUMEKO_ID) return this.active;
+    const target = previousId && previousId !== YUMEKO_ID && this.get(previousId) ? previousId : STANDARD_ID;
+    return this.activate(target);
+  }
+
   remove(id) {
     const p = this.get(id);
     if (!p) throw new ProfileError('not-found', 'Profil nicht gefunden.');
     if (p.type === 'standard') throw new ProfileError('locked', 'Die eingebaute Standardstrategie kann nicht gelöscht werden.');
+    if (p.type === YUMEKO_TYPE) throw new ProfileError('locked', 'Das Yumeko-Profil kann nicht gelöscht werden.');
     if (id === this.state.activeId) throw new ProfileError('active', 'Das aktive Profil kann nicht gelöscht werden. Aktiviere zuerst ein anderes Profil.');
     return this._commit('remove', () => {
       this.state.profiles = this.state.profiles.filter((x) => x.id !== id);
