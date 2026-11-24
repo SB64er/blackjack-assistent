@@ -278,7 +278,7 @@ test('11 Risikokontrolle: laufende Verlustserie erkannt, ohne Aufforderung zum Z
 // --- 12. Offline-Verhalten -----------------------------------------------------------
 test('12 Offline: neue Dateien im Offline-Speicher; Rechnen und Prüfen ohne Netzwerk', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  assert.match(sw, /bj-assistent-v0\.10\.0/);
+  assert.match(sw, /bj-assistent-v0\.11\.0/);
   const files = ['js/archive/insights.js', 'js/strategy/exact.js', 'js/strategy/table-rules.js'];
   for (const f of files) {
     assert.ok(sw.includes(`'./${f}'`), `${f} im Offline-Speicher`);
@@ -287,7 +287,7 @@ test('12 Offline: neue Dateien im Offline-Speicher; Rechnen und Prüfen ohne Net
     assert.ok(!/fetch\(/.test(src), `${f}: kein Netzwerkzugriff`);
     assert.ok(!/(api[_-]?key|secret)\s*[:=]\s*['"][A-Za-z0-9]/i.test(src), `${f}: kein Schlüssel im Code`);
   }
-  for (const v of ['APP_VERSION = \'0.10.0', '"version": "0.10.0"']) {
+  for (const v of ['APP_VERSION = \'0.11.0', '"version": "0.11.0"']) {
     const src = readFileSync(new URL(v.startsWith('APP') ? '../js/core/version.js' : '../package.json', import.meta.url), 'utf8');
     assert.ok(src.includes(v), v);
   }

@@ -9,7 +9,7 @@
 // - Eine neue Version wartet, bis der Benutzer "Aktualisieren" tippt
 //   (kein Neuladen mitten in einer Runde). Erstinstallation übernimmt sofort.
 // - Gelöscht werden nur alte Caches dieser App.
-const VERSION = 'bj-assistent-v0.10.0';
+const VERSION = 'bj-assistent-v0.11.0';
 const PREFIX = 'bj-assistent-';
 const NAV_TIMEOUT_MS = 3000;
 
@@ -44,6 +44,13 @@ const ASSETS = [
   './js/views/risk-view.js',
   './js/views/lernzentrum-view.js',
   './js/lernzentrum/lernzentrum.js',
+  './js/lernzentrum/bereiche.js',
+  './js/lernzentrum/karten-wissen.js',
+  './js/views/lz-common.js',
+  './js/views/lz-karten-view.js',
+  './js/views/lz-table-view.js',
+  './js/views/lz-study-view.js',
+  './js/views/lz-brain-view.js',
   './js/archive/insights.js',
   './js/strategy/exact.js',
   './js/strategy/table-rules.js',

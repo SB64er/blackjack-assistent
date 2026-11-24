@@ -1,4 +1,4 @@
-# Blackjack Assistent – PWA (Phase 1–8, Version 0.10.0)
+# Blackjack Assistent – PWA (Phase 1–8, Version 0.11.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
 Alle Daten (Einstellungen, Kalibrierung, angelernte Karten, Strategieprofile, Spielarchiv,
@@ -11,6 +11,9 @@ Echtgeld-Protokoll, Simulationen) bleiben lokal auf dem Gerät.
 >
 > **Version 0.10.0:** Grundgerüst des neuen Yumeko-Lernzentrums (ohne KI). Siehe Abschnitt
 > [„Version 0.10.0 – Yumeko-Lernzentrum (Grundgerüst)“](#version-0100--yumeko-lernzentrum-grundgerüst).
+>
+> **Version 0.11.0:** Die vier Lernbereiche Karten, AI Table, Study und Brain als eigene Seiten (ohne KI).
+> Siehe [„Version 0.11.0 – Lernbereiche“](#version-0110--lernbereiche-karten-ai-table-study-brain).
 
 ## Struktur
 
@@ -101,12 +104,15 @@ npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright
                        # Phase 8: Deckanzahl „Unbekannt“, Offline, Kamera, iPhone-Überlauf
                        # 0.9.0: Übernahme eines 0.8.0-Stands, KI-Gedächtnis sichern und löschen
                        # 0.10.0: Lernzentrum in allen Grössen, Yumeko-Profil ein/aus
+                       # 0.11.0: vier Lernbereiche, leere Zustände, Layout ohne Scrollen auf iPad quer
 ```
 
 `tests/phase8.test.mjs` prüft Datenbank-Migration, Speicherfehler, Rechenmodell, exakte Engine, Deckanzahl und
 unveränderte Kamera-Dateien; `tests/phase9.test.mjs` (ab 0.9.0) prüft das Entfernen der alten YUMEKO-KI, die
 Profil-Migration, Sicherung und Löschen des KI-Gedächtnisses und unveränderte Kamera-/Erkennungs-/Logik-Dateien.
 `tests/phase10.test.mjs` (ab 0.10.0) prüft Yumeko-Profil, Statistik und Ein-/Ausschalten im Lernzentrum.
+`tests/phase11.test.mjs` (ab 0.11.0) prüft die leeren Datenquellen der vier Lernbereiche, die Kartenregeln und
+dass keine Beispieldaten, Strategien oder Design-Tool-Abhängigkeiten übernommen wurden.
 
 ## Voraussetzungen
 
@@ -531,3 +537,22 @@ keine Lernalgorithmen, keine Strategien und keine automatischen Lernfunktionen.*
   „Bust“ (eigene Hand über 21) wird getrennt von „Lose“ gezählt; offene Ergebnisse zählen nicht.
 - Alle bisherigen Daten und Funktionen bleiben unverändert, auch das gesicherte alte KI-Gedächtnis.
 - Sicherung vor der Integration: Branch `sicherung/v0.9.0` und ZIP im Projektordner `sicherung/`.
+
+## Version 0.11.0 – Lernbereiche (Karten, AI Table, Study, Brain)
+
+Die vier Kacheln im Lernzentrum öffnen jetzt eigene Seiten nach den Entwürfen (iPad quer 1180×820).
+Übernommen wurde nur das Design; React, die Laufzeit des Design-Tools und Google Fonts nicht.
+**Weiterhin keine KI, keine Lernalgorithmen, keine Strategien.** Alle Zähler starten bei 0, Lernstände bei 0 %;
+noch nicht verfügbare Werte zeigen „—“. Von Yumeko abhängige Knöpfe sind deaktiviert.
+
+- **Karten**: Einzelkarten, Spielerhände, Dealer-Hände, Spieler × Dealer, Handtypen, Kartendecks. Zeigt nur feste
+  Regeln (Kartenwerte, Handtypen, Zusammensetzung des Kartenschuhs). Die Deckauswahl gilt nur für diese Seite,
+  die Tischregeln in den Einstellungen bleiben unverändert. Dealer-Wahrscheinlichkeiten: „—“.
+- **AI Table**: leerer Trainingstisch (Sim-Geld, kein Echtgeld), Statistik 0, keine Entscheidungen.
+- **Study**: Formular für YouTube, Video, Dokument, Text sichtbar; Hinzufügen und „Automatisch lernen“ deaktiviert.
+- **Brain**: leeres Gedächtnis (sechs Bereiche, leeres Wissensnetz). Das alte KI-Gedächtnis wird nicht angezeigt.
+- **Anschluss für die neue Yumeko-KI**: `js/lernzentrum/bereiche.js` liefert alle Anzeigedaten
+  (`kartenProgress`, `tableState`, `studyState`, `brainState`) und den Schalter `YUMEKO_READY`.
+  Die Ansichten `js/views/lz-*-view.js` lesen nur von dort.
+- Layout: iPad quer ohne Scrollen, iPad hoch/iPhone scrollen. Navigation ohne URL-Änderung (Kamera läuft weiter).
+- Sicherung vor der Integration: Branch `sicherung/v0.10.0` und ZIP im Projektordner `sicherung/`.

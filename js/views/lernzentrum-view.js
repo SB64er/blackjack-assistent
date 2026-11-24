@@ -1,9 +1,10 @@
 // Yumeko-Lernzentrum (0.10.0): Grundgerüst nach dem iPad-Design (quer 1180×820).
-// Nur Oberfläche – keine KI, keine Lernfunktionen. Die vier Bereiche zeigen vorerst Platzhalter.
+// Nur Oberfläche – keine KI, keine Lernfunktionen. Ab 0.11.0 öffnen die vier Kacheln eigene Unterseiten.
 import { View } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { STANDARD_ID } from '../strategy/profiles.js';
 import { AREAS, PROFILE_PANEL, yumekoStats, percentText, toggleYumeko } from '../lernzentrum/lernzentrum.js';
+import { SUBPAGES } from '../lernzentrum/bereiche.js';
 
 const AREA_ICONS = {
   karten: '<svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="12" height="16" rx="2"/><path d="M16 21H6a2 2 0 0 1-2-2V7"/></svg>',
@@ -67,7 +68,7 @@ export class LernzentrumView extends View {
       { label: 'BUST', value: s.bust, sub: percentText(s.bust, s.hands), color: '#FB923C' },
       { label: 'GLEICHSTAND', value: s.push, sub: percentText(s.push, s.hands), color: '#60A5FA' }
     ];
-    const panel = this.panel === 'profil' ? PROFILE_PANEL : AREAS.find((x) => x.id === this.panel) || null;
+    const panel = this.panel === 'profil' ? PROFILE_PANEL : null;
 
     this.el.innerHTML = `
       <div class="lz">
@@ -104,7 +105,7 @@ export class LernzentrumView extends View {
 
         <section class="lz-tiles" aria-label="Bereiche">
           ${AREAS.map((t) => `
-            <button type="button" class="lz-tile" data-lz="open" data-id="${t.id}" aria-label="${esc(t.title)} öffnen">
+            <button type="button" class="lz-tile" data-nav="${SUBPAGES[t.id]}" data-id="${t.id}" aria-label="${esc(t.title)} öffnen">
               <span class="lz-tile-icon" style="background:${t.tint};color:${t.color}">${AREA_ICONS[t.id]}</span>
               <span class="lz-tile-title">${esc(t.title)}</span>
             </button>`).join('')}
