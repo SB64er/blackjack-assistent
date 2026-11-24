@@ -1,7 +1,8 @@
-// YUMEKO → Strategie-Labor.
-// Strategien unter GLEICHEN Bedingungen vergleichen (gleiche Tischregeln, gleiche
+// Einstellungen → Strategie-Labor.
+// Strategieprofile unter GLEICHEN Bedingungen vergleichen (gleiche Tischregeln, gleiche
 // Mischfolge/Startwert, gleiche Rundenzahl). Klar getrennt:
-//   Exakte Mathematik (Rechenmodell) · Simulation (Zufall mit Startwert) · KI-Hypothesen (ungeprüft)
+//   Exakte Mathematik (Rechenmodell) · Simulation (Zufall mit Startwert)
+// 0.9.0: YUMEKO-Entwürfe und KI-Hypothesen (frühere YUMEKO-KI) sind entfernt.
 // Simulationsergebnisse werden getrennt von echten Runden gespeichert.
 import { View, subHeader } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
@@ -10,12 +11,10 @@ import { strategyEV, profilePolicy } from '../strategy/ev.js';
 import { normalizeRules, rulesText } from '../strategy/standard.js';
 import { pct } from '../strategy/analysis.js';
 import { fmtDateTime } from './archive-view.js';
-import { STAGE, stageOf } from '../yumeko/knowledge.js';
 
 const ROUND_OPTIONS = [10000, 50000, 100000, 500000];
 const CHUNK = 4000;
 const rate = (x, d = 1) => `${(x * 100).toFixed(d).replace('.', ',')} %`;
-const VSTATUS = { entwurf: 'Entwurf', 'geprüft': 'Geprüft', abgelehnt: 'Abgelehnt', aktiv: 'Aktiv', ersetzt: 'Ersetzt' };
 
 export class LabView extends View {
   mount() {
@@ -27,13 +26,12 @@ export class LabView extends View {
     this._run = null;      // { results, current, total, cancel }
     this._result = null;
     this.el.innerHTML = `
-      ${subHeader('YUMEKO – Strategie-Labor', 'yumeko')}
+      ${subHeader('Strategie-Labor', 'einstellungen')}
       <div class="sub-content" data-slot="content"></div>`;
     this.el.addEventListener('click', (e) => this._onClick(e));
     this.el.addEventListener('change', (e) => this._onChange(e));
     const r = () => { if (!this._run) this.render(); };
     this.listen(this.ctx.profiles, 'change', r);
-    this.listen(this.ctx.knowledge, 'change', r);
     this.listen(this.ctx.simulations, 'change', r);
     this.render();
   }
@@ -45,18 +43,13 @@ export class LabView extends View {
 
   _rules() { return normalizeRules(this.ctx.settings.get('rules')); }
 
-  /** Alle vergleichbaren Strategien: Profile + noch nicht aktive YUMEKO-Entwürfe. */
+  /** Alle vergleichbaren Strategien: die gespeicherten Strategieprofile. */
   _candidates() {
-    const { profiles, knowledge } = this.ctx;
-    const table = this._rules();
-    const list = profiles.list().map((p) => {
+    const { profiles } = this.ctx;
+    return profiles.list().map((p) => {
       const st = profiles.strategyFor(p);
-      return { id: `p:${p.id}`, name: p.name + (p.type === 'yumeko' ? ` (v${p.data.strategyVersion || 0})` : ''), kind: 'Profil', overrides: st.overrides, strategyRules: st.strategyRules, base: p.id === 'standard' };
+      return { id: `p:${p.id}`, name: p.name, kind: 'Profil', overrides: st.overrides, strategyRules: st.strategyRules, base: p.id === 'standard' };
     });
-    for (const v of knowledge.versions.filter((x) => ['entwurf', 'geprüft', 'abgelehnt'].includes(x.status))) {
-      list.push({ id: `v:${v.id}`, name: `YUMEKO-Entwurf ${v.number}`, kind: 'Entwurf', overrides: v.overrides, strategyRules: normalizeRules(v.rules), mismatch: rulesText(v.rules) !== rulesText(table) });
-    }
-    return list;
   }
 
   _onChange(e) {
@@ -72,14 +65,14 @@ export class LabView extends View {
 
   _selectedIds() {
     const all = this._candidates();
-    if (!this._selected) return all.filter((c) => c.base || c.id === 'p:yumeko').map((c) => c.id);
+    if (!this._selected) return all.filter((c) => c.base || c.id === `p:${this.ctx.profiles.activeId}`).map((c) => c.id);
     return this._selected.filter((id) => all.some((c) => c.id === id));
   }
 
   async _onClick(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn || btn.disabled) return;
-    const { yumeko, simulations, knowledge } = this.ctx;
+    const { simulations } = this.ctx;
     try {
       switch (btn.dataset.action) {
         case 'run': this._start(); return;
@@ -88,21 +81,10 @@ export class LabView extends View {
           if (!this._result) return;
           const r = this._result;
           await simulations.add({ rules: r.rules, rounds: r.rounds, seed: r.seed, results: r.results.map(({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds, sessions }) => ({ name, kind, ev, se, ci95, exact, winRate, lossRate, pushRate, perInitialUnit, perWagered, avgWager, longestLossStreak, maxDrawdown, rounds, ...(sessions && sessions.n ? { sessions } : {}) })), note: 'Strategie-Labor' });
-          await knowledge.logHistory('simulation', `Simulation gespeichert: ${r.results.length} Strategien × ${r.rounds.toLocaleString('de-CH')} Runden (Startwert ${r.seed}).`);
           this._notice = { tone: 'ok', text: 'Simulation gespeichert (getrennt von echten Runden).' };
           break;
         }
         case 'delete-sim': await simulations.remove(btn.dataset.id); this._notice = { tone: 'ok', text: 'Simulation gelöscht.' }; break;
-        case 'draft': {
-          const d = await yumeko.draft();
-          this._notice = { tone: 'ok', text: `Entwurf ${d.number} gespeichert (${d.basis.changes.length} Änderungen dokumentiert). Jetzt mathematisch prüfen und im Vergleich simulieren.` };
-          break;
-        }
-        case 'verify': {
-          const v = await yumeko.verify(btn.dataset.id);
-          this._notice = { tone: v.verification.ok ? 'ok' : 'warn', text: v.verification.ok ? `Entwurf ${v.number}: Prüfung bestanden. Aktivieren erst nach deiner Bestätigung im Lernzentrum.` : `Entwurf ${v.number}: Prüfung nicht bestanden – ${v.verification.problems[0] || ''}` };
-          break;
-        }
         default: return;
       }
     } catch (err) {
@@ -194,12 +176,10 @@ export class LabView extends View {
   }
 
   render() {
-    const { knowledge, simulations } = this.ctx;
+    const { simulations } = this.ctx;
     const rules = this._rules();
     const cands = this._candidates();
     const sel = new Set(this._selectedIds());
-    const hyps = knowledge.items.filter((i) => stageOf(i) === 'hypothesis').slice(0, 12);
-    const drafts = knowledge.versions.filter((v) => ['entwurf', 'geprüft', 'abgelehnt'].includes(v.status));
     const notice = this._notice ? `<p class="notice notice--${this._notice.tone}" role="status">${this._notice.tone === 'ok' ? ICONS.check : ICONS.warning}<span>${esc(this._notice.text)}</span></p>` : '';
     this.el.querySelector('[data-slot="content"]').innerHTML = `
       ${notice}
@@ -207,7 +187,6 @@ export class LabView extends View {
       <div class="kind-legend">
         <span class="kind kind--calc">Exakte Mathematik</span><span>Rechenmodell, ohne Zufall, jederzeit nachrechenbar (unendliches Deck).</span>
         <span class="kind kind--sim">Simulation</span><span>Endlicher Schuh, Zufall mit Startwert – reproduzierbar, mit statistischer Unsicherheit.</span>
-        <span class="kind kind--assume">KI-Hypothese</span><span>Ungeprüfte Vermutung aus Archiv, Video oder eigener Eingabe – nie direkt in die Strategie.</span>
       </div>
 
       <section class="group">
@@ -221,27 +200,6 @@ export class LabView extends View {
         ${this._run ? '<button type="button" class="btn btn--ghost" data-action="cancel">Abbrechen</button>' : '<button type="button" class="btn btn--primary" data-action="run">Simulation starten</button>'}
         <div data-slot="progress"></div>
         ${this._result ? this._resultHtml(this._result) : ''}
-      </section>
-
-      <section class="group">
-        <h2 class="group-title">STRATEGIEENTWÜRFE</h2>
-        <p class="group-help">Entwürfe entstehen aus dem Rechenmodell plus bestätigten Lerninformationen. Ablauf: speichern → mathematisch prüfen → im Vergleich simulieren → im Lernzentrum bestätigen. Erst dann wird die Version aktiv.</p>
-        ${drafts.length ? drafts.map((v) => `
-          <article class="knowledge-card knowledge-card--version">
-            <p><b>Entwurf ${v.number}</b> · ${esc(VSTATUS[v.status] || v.status)} · ${esc(rulesText(v.rules))} · ${Object.keys(v.overrides).length} Abweichungen zur Standardstrategie · ${v.basis.changes.length} Änderungen zur aktiven Version</p>
-            ${v.verification ? `<p class="meta">Exakte Mathematik: ${pct(v.verification.evVersion, 3)} (Standard ${pct(v.verification.evStandard, 3)})</p>` : ''}
-            <div class="btn-row">
-              ${v.status !== 'geprüft' ? `<button type="button" class="btn btn--small" data-action="verify" data-id="${esc(v.id)}">Mathematisch prüfen</button>` : ''}
-              ${v.status === 'geprüft' ? '<button type="button" class="btn btn--small btn--yumeko" data-nav="yumeko">Im Lernzentrum bestätigen</button>' : ''}
-            </div>
-          </article>`).join('') : '<p class="hint">Keine offenen Entwürfe.</p>'}
-        <button type="button" class="btn btn--yumeko" data-action="draft">Neuen Strategieentwurf speichern</button>
-      </section>
-
-      <section class="group">
-        <h2 class="group-title">KI-HYPOTHESEN (UNGEPRÜFT)</h2>
-        ${hyps.length ? `<ul class="plain-list">${hyps.map((h) => `<li><span class="kind kind--assume">${esc(STAGE[stageOf(h)])}</span> ${h.situation ? `<b>${esc(h.situation)}:</b> ` : ''}${esc(h.content)}</li>`).join('')}</ul>` : '<p class="hint">Keine ungeprüften Hypothesen.</p>'}
-        <p class="hint">Hypothesen werden nur übernommen, wenn sie als Strategieregel bestätigt sind und die mathematische Prüfung bestehen.</p>
       </section>
 
       <section class="group">

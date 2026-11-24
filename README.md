@@ -1,9 +1,13 @@
-# Blackjack Assistent – PWA (Phase 1–8, Version 0.8.0)
+# Blackjack Assistent – PWA (Phase 1–8, Version 0.9.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
-Alle Daten (Einstellungen, Kalibrierung, Spielarchiv, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen,
-Academy-Videos und -Aussagen) bleiben lokal auf dem Gerät. Einzige Ausnahme: ein selbst eingetragener
-Yumeko-Server (Phase 8, standardmässig aus), siehe `server/README.md`.
+Alle Daten (Einstellungen, Kalibrierung, angelernte Karten, Strategieprofile, Spielarchiv,
+Echtgeld-Protokoll, Simulationen) bleiben lokal auf dem Gerät.
+
+> **Version 0.9.0:** Die bisherige YUMEKO-KI, ihr Lernzentrum, die Lernalgorithmen und die Yumeko
+> Academy sind entfernt (Vorbereitung für eine Neuentwicklung). Siehe Abschnitt
+> [„Version 0.9.0 – alte YUMEKO-KI entfernt“](#version-090--alte-yumeko-ki-entfernt).
+> Die Beschreibungen der Phasen 6–8 weiter unten sind historisch.
 
 ## Struktur
 
@@ -15,6 +19,7 @@ icons/                   App-Symbole (180, 192, 512, maskable)
 css/app.css              Design (dunkel, minimalistisch)
 js/app.js                Einstieg + Navigation OHNE URL-Änderung (data-nav), Kamera-Start per Tipp
 js/core/                 Speicher, Ereignisse, Einstellungen, DOM-Hilfen, idb (IndexedDB + Ersatzspeicher),
+                         legacy-ai (Sicherung und Löschen des alten KI-Gedächtnisses),
                          display (Home-Bildschirm-App, Vollbild), updates (Service Worker, Update-Hinweis)
 js/camera/               CameraService – getUserMedia (Stufen-Fallback), Start/Stopp, Fehler,
                          Frame-Wächter mit Selbstreparatur, Fortsetzen, Dock, Wake-Lock;
@@ -23,28 +28,23 @@ js/calibration/          geometry (reine Mathematik), store (Speichern/Laden),
                          model (Zustand), editor (Rechtecke per Finger)
 js/test/                 Testmodus-Checkliste (7 Schritte)
 js/views/                Ansichten: Haupt, Einstellungen, Kamera, Test, Strategieprofile, Profil-Editor,
-                         Spielarchiv, Runde, YUMEKO-Lernzentrum, Wissen, Video lernen,
-                         Strategie-Labor (lab), Echtgeld & Risiko (risk), YUMEKO-Chat (chat), Yumeko Academy (academy)
-js/academy/              youtube (Link prüfen, Video-ID), extract (Aussagen aus Text erkennen), verify (mathematische
-                         Prüfung), server-client (eigener Server, optional), academy-store (Videos, Aussagen, Meldungen)
+                         Spielarchiv, Runde, Strategie-Labor (lab), Echtgeld & Risiko (risk)
 js/demo/                 Simulierte Spielzustände (Demo-Modus)
 js/game/                 hand (Kartenwerte), card-tracker (Mehrfachbestätigung, keine Doppelzählung),
                          round-state (Live-Runde, verdeckte Karte, Split, Rundenende), settle (Ergebnis W/L/Push)
 js/archive/              round-record (Datensatz, Prüfung, Filter), archive-store (IndexedDB, Export/Import),
                          insights (Abweichungen, Lernfortschritt, wiederkehrende Fehler, Statistik)
-js/yumeko/               knowledge (Wissensspeicher, Lernverlauf), archive-analysis (Analyse), yumeko (Versionen, Prüfung),
-                         video-learner (Szenenwechsel, Aktionsvorschläge), decision (Strategieintelligenz),
-                         chat (datenbasierte Antworten), sim-store (gespeicherte Simulationen)
 js/risk/                 bankroll (Budget, Saldo, Protokoll, Limits), risk (Risikointelligenz, Schutzregeln)
 js/strategy/             standard (Basisstrategie 4–8 Decks), engine (Entscheidung), profiles (Profilspeicher),
                          ev (Rechenmodell), analysis, simulate (reproduzierbare Simulation), research (KI-Strategie),
-                         exact (exakte Erwartungswerte im endlichen Schuh), table-rules (Deckanzahl, unbekannte Regeln)
+                         exact (exakte Erwartungswerte im endlichen Schuh), table-rules (Deckanzahl, unbekannte Regeln),
+                         decision (Strategieintelligenz), decision-ev (Erwartungswerte einer Entscheidung),
+                         sim-store (gespeicherte Simulationen)
 js/recognition/          vision (Bildverarbeitung), analyzer (Vorlagenvergleich),
                          template-store (angelernte Muster + Zustimmung),
                          round-tracker (Glättung, neue Runde, gezogene Karte),
                          recognition-service (Live-Auswertung), detection-overlay
 tests/                   Logik-Tests (npm test) und Browser-Test (npm run test:browser)
-server/                  optionaler Referenz-Server für die Academy (Node, nicht Teil der App)
 package.json             nur für die Tests – die App selbst braucht keinen Build
 ```
 
@@ -93,15 +93,15 @@ npm test               # Logik: Geometrie, Hand, Runden, Muster, Version, Offlin
                        # Strategie, Profile, Migration, Rechenmodell, Simulation, KI-Recherche
 npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright), inkl. Profile
                        # und Betrieb unter /blackjack-assistent/ (wie GitHub Pages),
-                       # Phase 6: Live-Runde, Archiv, Korrektur, Export, YUMEKO, Video, Überlauf
-                       # Phase 7: Echtgeld/Limits/Stopp, Labor, Chat, Lernverlauf, Neustart
-                       # Phase 8: Deckanzahl „Unbekannt“, Academy (Link, Transkript, Prüfung,
-                       # Wissen, Statistik, Rechner, Daten), Offline, Kamera, iPhone-Überlauf
+                       # Phase 6: Live-Runde, Archiv, Korrektur, Export, Überlauf
+                       # Phase 7: Echtgeld/Limits/Stopp, Labor, Neustart
+                       # Phase 8: Deckanzahl „Unbekannt“, Offline, Kamera, iPhone-Überlauf
+                       # 0.9.0: Übernahme eines 0.8.0-Stands, KI-Gedächtnis sichern und löschen
 ```
 
-`npm test` umfasst ab 0.8.0 auch `tests/phase8.test.mjs` (Datenbank-Migration, Export/Import, Löschen,
-Speicherfehler, Link-Prüfung, Video-ID, fehlendes Transkript, Aussagen-Erkennung, Strategieprüfung,
-Rechenmodell, Deckanzahl, Kamera-Dateien unverändert) und `tests/server.test.mjs` (Referenz-Server).
+`tests/phase8.test.mjs` prüft Datenbank-Migration, Speicherfehler, Rechenmodell, exakte Engine, Deckanzahl und
+unveränderte Kamera-Dateien; `tests/phase9.test.mjs` (ab 0.9.0) prüft das Entfernen der alten YUMEKO-KI, die
+Profil-Migration, Sicherung und Löschen des KI-Gedächtnisses und unveränderte Kamera-/Erkennungs-/Logik-Dateien.
 
 ## Voraussetzungen
 
@@ -454,3 +454,53 @@ die App sagt das im Daten-Tab.
   seltenen Fällen auf dem iPad 1–3 Sekunden dauern.
 - Bust-Wahrscheinlichkeiten und Hausvorteil aus Videos werden mit Toleranz geprüft (±2,5 bzw. ±0,3 Prozentpunkte).
 - Kamera, „Erkennung melden“ und die Academy auf dem iPad nur auf einem echten Gerät abschliessend prüfbar.
+
+## Version 0.9.0 – alte YUMEKO-KI entfernt
+
+Vorbereitung für die Neuentwicklung von Yumeko. Die Blackjack-App selbst bleibt unverändert.
+
+**Sicherung vor der Änderung:** Branch `sicherung/v0.8.0` auf GitHub (Stand von `main` mit 0.8.0).
+
+### Entfernt
+
+| Bereich | Dateien |
+|---------|---------|
+| YUMEKO-KI (Archivanalyse, Strategieentwürfe, Prüfung, Bestätigung, gelernte Zusatzprüfungen der Erkennung) | `js/yumeko/yumeko.js`, Profil-Typ `yumeko` in `js/strategy/profiles.js` |
+| Lernzentrum, Wissensbibliothek, Video lernen, Chat | `js/views/yumeko-view.js`, `knowledge-view.js`, `video-view.js`, `chat-view.js`, `js/yumeko/knowledge.js`, `video-learner.js`, `chat.js` |
+| Lernalgorithmen | Archivanalyse (`analyzeArchive`), Lernen aus Korrekturen, Videos und Transkripten |
+| Yumeko Academy und Yumeko-Server | `js/academy/`, `js/views/academy-view.js`, `server/`, „Erkennung melden“ |
+
+### Unverändert erhalten (gemeinsam genutzt)
+
+- Kamera, Kartenerkennung, Kalibrierung, Anlernen, Testmodus, Blackjack-Logik: Dateien unverändert (ein Test prüft die Prüfsummen).
+- Spielarchiv inkl. Auswertung (Abweichungen, Fehler laut Rechenmodell), Einstellungen, Strategieprofile, KI-Strategie (Phase 5), Echtgeld & Risiko, Strategie-Labor, Simulationen, exakte Engine.
+- Verschoben, nicht gelöscht: `js/yumeko/decision.js` → `js/strategy/decision.js`, `js/yumeko/sim-store.js` → `js/strategy/sim-store.js`,
+  `decisionEVs` aus `js/yumeko/archive-analysis.js` → `js/strategy/decision-ev.js`.
+- Strategie-Labor und Echtgeld & Risiko sind jetzt direkt über die Einstellungen erreichbar.
+
+### Profil „YUMEKO AI“
+
+Beim ersten Start von 0.9.0 wird das Original unverändert unter `bjassist.legacy.yumekoProfile` gesichert und dann entfernt.
+Hatte es eine bestätigte eigene Tabelle, bleibt diese als normales, frei bearbeitbares Profil „YUMEKO AI (gesichert)“ erhalten
+(war YUMEKO aktiv, ist dieses Profil aktiv – die Empfehlungen ändern sich nicht). Ohne eigene Tabelle nutzte YUMEKO die
+Standardstrategie; dann wird die Standardstrategie aktiv. Kann die Sicherung nicht gespeichert werden, bleiben die Profile
+unverändert und schreibgeschützt.
+
+### Altes KI-Gedächtnis (Einstellungen → Altes KI-Gedächtnis)
+
+Nichts wird automatisch gelöscht. Die Daten der alten KI (IndexedDB-Bereiche `knowledge`, `videos`, `versions`, `history`,
+`sources`, `claims`, `feedback`, Eintrag `meta/yumeko`; localStorage `bjassist.yumekoChat`, `bjassist.academy.server`,
+`bjassist.legacy.yumekoProfile`) werden nicht mehr verwendet.
+
+1. **Sicherung herunterladen (JSON)** – Format `bjai-ki-gedaechtnis-sicherung` v1, Rohdaten unverändert.
+2. **Altes KI-Gedächtnis löschen** – erst möglich, wenn genau der aktuelle Stand gesichert wurde, und nur mit Bestätigung.
+   Gelöscht werden ausschliesslich die oben genannten Daten. Spielarchiv, Profile, Echtgeld (`meta/bankroll`, `ledger`),
+   Simulationen, Einstellungen, Kalibrierung und angelernte Karten bleiben.
+
+Die Datenbank-Bereiche selbst bleiben bestehen (IndexedDB-Version 3 unverändert). Eine Archiv-Sicherung aus 0.8.0 lässt sich
+weiterhin importieren; enthaltene YUMEKO-/Academy-Daten werden dabei nicht übernommen (sie bleiben in der Datei).
+
+### Tests
+
+`npm test` (Logik, inkl. `tests/phase9.test.mjs`) und `npm run test:browser` (u. a. Übernahme eines 0.8.0-Stands mit aktivem
+YUMEKO-Profil, Sicherung und Löschen in iPad- und iPhone-Grösse).

@@ -9,7 +9,7 @@
 // - Eine neue Version wartet, bis der Benutzer "Aktualisieren" tippt
 //   (kein Neuladen mitten in einer Runde). Erstinstallation übernimmt sofort.
 // - Gelöscht werden nur alte Caches dieser App.
-const VERSION = 'bj-assistent-v0.8.0';
+const VERSION = 'bj-assistent-v0.9.0';
 const PREFIX = 'bj-assistent-';
 const NAV_TIMEOUT_MS = 3000;
 
@@ -40,18 +40,8 @@ const ASSETS = [
   './js/views/profile-view.js',
   './js/views/archive-view.js',
   './js/views/round-view.js',
-  './js/views/yumeko-view.js',
-  './js/views/knowledge-view.js',
-  './js/views/video-view.js',
   './js/views/lab-view.js',
   './js/views/risk-view.js',
-  './js/views/chat-view.js',
-  './js/views/academy-view.js',
-  './js/academy/youtube.js',
-  './js/academy/extract.js',
-  './js/academy/verify.js',
-  './js/academy/server-client.js',
-  './js/academy/academy-store.js',
   './js/archive/insights.js',
   './js/strategy/exact.js',
   './js/strategy/table-rules.js',
@@ -61,13 +51,10 @@ const ASSETS = [
   './js/game/settle.js',
   './js/archive/round-record.js',
   './js/archive/archive-store.js',
-  './js/yumeko/knowledge.js',
-  './js/yumeko/archive-analysis.js',
-  './js/yumeko/yumeko.js',
-  './js/yumeko/video-learner.js',
-  './js/yumeko/decision.js',
-  './js/yumeko/chat.js',
-  './js/yumeko/sim-store.js',
+  './js/strategy/decision-ev.js',
+  './js/strategy/decision.js',
+  './js/strategy/sim-store.js',
+  './js/core/legacy-ai.js',
   './js/risk/bankroll.js',
   './js/risk/risk.js',
   './js/strategy/standard.js',

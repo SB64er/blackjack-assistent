@@ -4,12 +4,11 @@ import { ICONS, esc } from '../core/dom.js';
 import { DEMO_SCENARIOS, RECOMMENDATIONS } from '../demo/scenarios.js';
 import { handInfo, upcardLabel, RANK_NAMES } from '../game/hand.js';
 import { RecognitionReason } from '../recognition/recognition-service.js';
-import { decide, ACTION_TO_RECOMMENDATION, ACTION_LABEL } from '../strategy/engine.js';
-import { decisionEVs } from '../yumeko/archive-analysis.js';
+import { decide, ACTION_TO_RECOMMENDATION } from '../strategy/engine.js';
 import { pct } from '../strategy/analysis.js';
 import { OUTCOME_LABEL } from '../game/settle.js';
 import { assessRisk, RISK_LEVEL_TEXT } from '../risk/risk.js';
-import { activeStrategyEVCached } from '../yumeko/decision.js';
+import { activeStrategyEVCached } from '../strategy/decision.js';
 
 const plain = (c) => (c ? { rank: c.rank, confident: c.confident !== false, ...(c.suit ? { suit: c.suit } : {}) } : null);
 
@@ -46,8 +45,7 @@ function handBlock(title, cards, info) {
 const EVENT_TEXT = {
   'round-start': 'Neue Runde erkannt',
   'card-added': 'Karte gezogen',
-  'round-suggested': 'Neue Runde? Tippe auf „Neue Hand“.',
-  'report-saved': 'Erkennung gemeldet – die Runde wird im Archiv markiert.'
+  'round-suggested': 'Neue Runde? Tippe auf „Neue Hand“.'
 };
 
 export class MainView extends View {
@@ -126,7 +124,6 @@ export class MainView extends View {
       }
       case 'dismiss-pending': ui.set('pendingRound', null); break;
       case 'finish-round': recognition.finishRound(); break;
-      case 'report': this._report(); break;
       case 'mode-auto': settings.set('roundMode', 'automatisch'); break;
       case 'mode-manual': settings.set('roundMode', 'manuell'); break;
       case 'speech': settings.set('speech', !settings.get('speech')); break;
@@ -142,27 +139,6 @@ export class MainView extends View {
     }
   }
 
-  // 0.8.0 Kamera-Lernmodus: falsche Kartenerkennung melden (nur Kartenwerte, keine Bilder).
-  _report() {
-    const { recognition, academy } = this.ctx;
-    if (!academy) return;
-    const snap = recognition.round ? recognition.round.snapshot() : null;
-    const st = recognition.state;
-    const plainCards = (list) => (list || []).map((c) => ({ rank: c.rank, score: c.score ?? null }));
-    academy.addFeedback({
-      kind: 'wrong-card',
-      roundId: snap ? snap.id : null,
-      dealer: plainCards(snap ? snap.dealer : []),
-      hands: snap ? snap.hands.map((h) => plainCards(h.cards)) : [],
-      uncertain: !!(st && st.uncertain)
-    }).then(() => {
-      this._event = { type: 'report-saved' };
-      clearTimeout(this._eventTimer);
-      this._eventTimer = setTimeout(() => { this._event = null; this.render(); }, 2500);
-      this.render();
-    }).catch((err) => console.warn('[kamera] Meldung nicht gespeichert', err));
-  }
-
   // Empfehlung des aktiven Strategieprofils (Engine).
   _advise(cards, dealerUp, afterSplit = false) {
     const { profiles, settings } = this.ctx;
@@ -175,7 +151,7 @@ export class MainView extends View {
   // Spielzustand für die Anzeige (Demo oder Live).
   _model() {
     const { settings, recognition, templates, camera, profiles } = this.ctx;
-    const profile = { id: profiles.active.id, name: profiles.active.name, type: profiles.active.type, version: profiles.active.type === 'yumeko' ? (profiles.active.data.strategyVersion || 0) : null };
+    const profile = { id: profiles.active.id, name: profiles.active.name, type: profiles.active.type };
     if (settings.get('demo')) {
       const s = DEMO_SCENARIOS[demoIndex];
       const confident = s.player.every((c) => c.confident) && s.dealerUp.confident;
@@ -217,9 +193,6 @@ export class MainView extends View {
     if (!m.uncertain && m.dealerUp) {
       const split = m.hands.length > 1;
       m.advice = m.hands.map((h) => this._advise(h.cards, m.dealerUp, split));
-      if (profile.type === 'yumeko' && m.advice[0]) m.explain = this._explain(m.hands[0].cards, m.dealerUp, split);
-      // Für den YUMEKO-Chat („Warum empfiehlst du diese Aktion?“) – ohne Ereignis, nur Zustand.
-      if (this.ctx.ui && m.advice[0]) this.ctx.ui.lastSituation = { cards: m.hands[0].cards.map((c) => ({ rank: c.rank })), up: { rank: m.dealerUp.rank }, afterSplit: split };
     }
     return m;
   }
@@ -232,7 +205,7 @@ export class MainView extends View {
     const risk = assessRisk({ config: bankroll.config, stats: bankroll.stats(), strategy });
     const top = risk.messages.find((x) => x.tone === 'stop') || risk.messages.find((x) => x.tone === 'warn' && x.code !== 'negative-ev') || risk.messages.find((x) => x.code === 'negative-ev');
     const shortText = top && top.code === 'negative-ev'
-      ? `Negativer Erwartungswert (${pct(strategy.ev, 2)} pro Einsatz) – YUMEKO rät vom Echtgeld-Spiel ab.`
+      ? `Negativer Erwartungswert (${pct(strategy.ev, 2)} pro Einsatz) – vom Echtgeld-Spiel wird abgeraten.`
       : (top ? top.text : 'Echtgeld-Modus aktiv.');
     const cur = bankroll.config.currency;
     const bal = bankroll.stats().balance;
@@ -241,15 +214,6 @@ export class MainView extends View {
       <span>${esc(shortText)}</span>
       <small>Saldo ${bal != null ? bal.toFixed(2) : '–'} ${esc(cur)} · Spielempfehlung ≠ Empfehlung, Geld einzusetzen</small>
     </button>`;
-  }
-
-  // YUMEKO: nachvollziehbare Begründung aus dem Rechenmodell.
-  _explain(cards, up, afterSplit) {
-    const d = decisionEVs(cards.map((c) => c.rank), up.rank, this.ctx.settings.get('rules'), afterSplit);
-    if (!d) return null;
-    const sorted = Object.entries(d.evs).sort((a, b) => b[1] - a[1]);
-    if (sorted.length < 2) return null;
-    return `Rechenmodell: ${ACTION_LABEL[sorted[0][0]]} ${pct(sorted[0][1] - sorted[1][1], 2)} besser als ${ACTION_LABEL[sorted[1][0]]}`;
   }
 
   _centerHtml(m) {
@@ -266,7 +230,7 @@ export class MainView extends View {
     }
     const profileTag = (r) => `
           <button type="button" class="profile-tag profile-tag--${esc(m.profile.type)}" data-nav="strategie" aria-label="Strategieprofil: ${esc(m.profile.name)} – wechseln">
-            <span class="profile-tag-dot"></span>${esc(m.profile.name)}${m.profile.type === 'yumeko' ? ` · v${m.profile.version}` : ''}${r && r.decision && r.decision.deviates ? ' · weicht von Standard ab' : ''}
+            <span class="profile-tag-dot"></span>${esc(m.profile.name)}${r && r.decision && r.decision.deviates ? ' · weicht von Standard ab' : ''}
           </button>`;
     if (m.mode === 'demo' && m.recommendation) {
       const r = m.recommendation;
@@ -329,7 +293,6 @@ export class MainView extends View {
         <span class="rec-kicker">EMPFEHLUNG${m.round ? ` · RUNDE ${m.round}` : ''}${second ? ' · HAND 1' : ''}</span>
         <span class="rec-word" data-len="${adv.label.length}">${esc(adv.label)}</span>
         <span class="rec-hand">${esc(`${main.text}${vs}`)}${second ? esc(` · Hand 2: ${second.text}${adv2 ? ` → ${adv2.label}` : ''}`) : ''}</span>
-        ${m.explain ? `<span class="rec-explain">◆ ${esc(m.explain)}</span>` : ''}
         ${profileTag(adv)}
       </section>`;
     }
@@ -438,7 +401,6 @@ export class MainView extends View {
           ? '<button type="button" class="btn btn--primary" data-action="new-hand">Neue Hand</button>'
           : `<div class="waiting"><span class="dot dot--ok"></span>${esc(autoInfo)}</div>`}
         ${!demo && m.roundActive ? '<button type="button" class="btn btn--ghost" data-action="finish-round">Runde abschliessen</button>' : ''}
-        ${!demo && m.roundActive && this.ctx.academy ? '<button type="button" class="btn btn--ghost" data-action="report">Erkennung melden</button>' : ''}
         ${demo ? `
           <button type="button" class="btn btn--ghost" data-action="next-demo">
             Demo: nächstes Szenario (${demoIndex + 1}/${DEMO_SCENARIOS.length}) ${ICONS.chevron}

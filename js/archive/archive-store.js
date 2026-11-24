@@ -73,7 +73,7 @@ export class ArchiveStore extends Emitter {
     mutate(copy);
     if (!keepConfirmation) copy.confirmation = 'manual';
     copy.updatedAt = new Date().toISOString();
-    // changes: [{ from: 'K', to: '7' }] – korrigierte Kartenwerte (YUMEKO lernt daraus)
+    // changes: [{ from: 'K', to: '7' }] – korrigierte Kartenwerte
     const ch = (Array.isArray(changes) ? changes : []).filter((c) => c && c.from && c.to).map((c) => ({ from: String(c.from), to: String(c.to) }));
     copy.corrections = [...(cur.corrections || []), { at: copy.updatedAt, note: String(note).slice(0, 200), ...(ch.length ? { changes: ch } : {}) }].slice(-50);
     const v = validateRound(copy);
@@ -118,7 +118,7 @@ export class ArchiveStore extends Emitter {
     this.emit('change', { type: 'clear' });
   }
 
-  /** Sicherung als JSON-Objekt (Archiv + optional YUMEKO-Daten). */
+  /** Sicherung als JSON-Objekt (Archiv + optional Echtgeld-Protokoll und Simulationen). */
   async exportData(extra = {}) {
     await this._ready;
     return {

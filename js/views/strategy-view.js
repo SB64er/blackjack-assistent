@@ -14,7 +14,7 @@ function formatDate(iso) {
 }
 
 export function typeBadge(type) {
-  return `<span class="type-badge type-badge--${esc(type)}">${type === 'ai' ? '✦ ' : (type === 'yumeko' ? '◆ ' : '')}${esc(TYPE_LABEL[type] || type)}</span>`;
+  return `<span class="type-badge type-badge--${esc(type)}">${type === 'ai' ? '✦ ' : ''}${esc(TYPE_LABEL[type] || type)}</span>`;
 }
 
 export class StrategyView extends View {
@@ -258,14 +258,13 @@ export class StrategyView extends View {
             ${isActive ? `<span class="active-chip">${ICONS.check}AKTIV</span>` : ''}
           </div>
           ${p.description ? `<p class="profile-card-desc">${esc(p.description)}</p>` : ''}
-          <p class="meta">${esc(p.settings.followTableRules ? 'Folgt den Tischregeln' : rulesText(p.rules))} · ${p.type === 'standard' ? 'Referenztabelle' : (p.type === 'yumeko' ? `Strategieversion ${p.data.strategyVersion || 0} · ${dev} ${dev === 1 ? 'Abweichung' : 'Abweichungen'}` : `${dev} ${dev === 1 ? 'Abweichung' : 'Abweichungen'}`)}${p.id !== STANDARD_ID ? ` · geändert ${esc(formatDate(p.updatedAt))}` : ''}</p>
+          <p class="meta">${esc(p.settings.followTableRules ? 'Folgt den Tischregeln' : rulesText(p.rules))} · ${p.type === 'standard' ? 'Referenztabelle' : `${dev} ${dev === 1 ? 'Abweichung' : 'Abweichungen'}`}${p.id !== STANDARD_ID ? ` · geändert ${esc(formatDate(p.updatedAt))}` : ''}</p>
           ${st.rulesMismatch ? `<p class="meta text-warn">${ICONS.warning} Für andere Tischregeln erstellt</p>` : ''}
           <div class="profile-actions">
             ${isActive ? '' : `<button type="button" class="btn btn--primary btn--compact" data-action="activate" data-id="${esc(p.id)}">Aktivieren</button>`}
-            ${p.type === 'yumeko' ? '<button type="button" class="btn btn--yumeko btn--compact" data-nav="yumeko">Lernzentrum</button>' : ''}
-            <button type="button" class="btn btn--secondary btn--compact" data-action="open" data-id="${esc(p.id)}">${p.type === 'standard' || p.type === 'yumeko' ? 'Ansehen' : 'Bearbeiten'}</button>
+            <button type="button" class="btn btn--secondary btn--compact" data-action="open" data-id="${esc(p.id)}">${p.type === 'standard' ? 'Ansehen' : 'Bearbeiten'}</button>
             <button type="button" class="btn btn--ghost btn--compact" data-action="duplicate" data-id="${esc(p.id)}">Duplizieren</button>
-            ${p.type === 'standard' || p.type === 'yumeko' ? '' : (isActive
+            ${p.type === 'standard' ? '' : (isActive
               ? '<span class="hint profile-hint">Aktives Profil – zum Löschen zuerst ein anderes aktivieren</span>'
               : `<button type="button" class="btn ${confirm ? 'btn--danger' : 'btn--ghost'} btn--compact" data-action="delete" data-id="${esc(p.id)}">${confirm ? 'Wirklich löschen?' : 'Löschen'}</button>`)}
           </div>

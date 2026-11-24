@@ -822,16 +822,7 @@ html.is-standalone, html.is-standalone body { background: var(--bg); }
 .code-btn.is-current:disabled { opacity: 1; }
 .sheet > * { flex-shrink: 0; }
 
-/* ===== Phase 6: YUMEKO, Spielarchiv, Video lernen ===== */
-:root { --yumeko: #F5B544; --yumeko-bg: rgba(245,181,68,.12); }
-.btn--yumeko { background: var(--yumeko-bg); border-color: rgba(245,181,68,.6); color: #FDE9C3; font-weight: 600; }
-.type-badge--yumeko { background: var(--yumeko-bg); border-color: rgba(245,181,68,.55); color: #FDE9C3; }
-.profile-tag--yumeko { border-color: rgba(245,181,68,.5); color: #FDE9C3; }
-.profile-tag--yumeko .profile-tag-dot { background: var(--yumeko); }
-.profile-card--yumeko { background: linear-gradient(180deg, rgba(245,181,68,.08), var(--surface) 60%); }
-.profile-card--yumeko:not(.is-active) { border-color: rgba(245,181,68,.35); }
-.source-box--yumeko { border-color: rgba(245,181,68,.4); }
-.rec-explain { font-size: 14px; color: #FDE9C3; max-width: 40ch; line-height: 1.35; }
+/* ===== Phase 6: Spielarchiv (YUMEKO-Teile seit 0.9.0 entfernt) ===== */
 .kind--warn { background: rgba(248,113,113,.14); color: #FECACA; }
 .text-ok { color: #A7F3D0; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--stand); text-decoration: underline; font-size: inherit; cursor: pointer; min-height: 0; }
@@ -899,72 +890,19 @@ html.is-standalone, html.is-standalone body { background: var(--bg); }
 .field--inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
 .field--inline input, .field--inline select { max-width: 200px; }
 
-/* Lernzentrum */
-.yumeko-hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-radius: var(--radius); border: 1px solid rgba(245,181,68,.45); background: linear-gradient(135deg, rgba(245,181,68,.16), var(--surface) 70%); }
-.yumeko-hero > div { display: flex; flex-direction: column; gap: 2px; }
-.yumeko-hero strong { font-family: var(--font-display); font-size: 26px; letter-spacing: .04em; }
-.yumeko-hero .btn { width: auto; }
-.yumeko-mark { color: var(--yumeko); font-size: 20px; }
-.yumeko-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.yumeko-actions .btn--primary { grid-column: 1 / -1; }
-.phase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.phase { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
-.phase span { font-size: 13px; color: var(--text-2); line-height: 1.4; }
-@media (max-width: 700px) { .phase-grid { grid-template-columns: 1fr; } }
-.luck-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
-.luck-grid div { display: flex; flex-direction: column; padding: 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
-.luck-grid b { font-size: 20px; }
-.luck-grid span { font-size: 12px; color: var(--muted); }
-.version-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 8px; }
-.version-card--aktiv { border-color: rgba(245,181,68,.6); }
-.version-card p { margin: 0; }
-.version-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: 0; padding: 0; min-height: 40px; cursor: pointer; text-align: left; }
-
-/* Wissen */
-.tab-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
-.tab-scroll .chip { flex-shrink: 0; flex-direction: row; white-space: nowrap; --chip-color: var(--yumeko); }
-.knowledge-list { display: flex; flex-direction: column; gap: 8px; }
+/* Karten (Strategie-Labor) */
 .knowledge-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 8px; }
 .knowledge-card { min-width: 0; }
 .knowledge-card p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
-.knowledge-card--verified { border-left: 4px solid var(--ok); }
-.knowledge-card--hypothesis { border-left: 4px solid var(--warn); }
-.knowledge-card--video { border-left: 4px solid var(--split); }
-.knowledge-card--rule, .knowledge-card--version { border-left: 4px solid var(--yumeko); }
-.knowledge-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.knowledge-head .kind { margin-left: 0; }
-.knowledge-card .btn-row .btn { flex: 0 0 auto; margin-top: 0; }
 
-/* Video lernen */
-.video-stage { aspect-ratio: 16 / 9; }
-.file-video { width: 100%; max-height: 50vh; border-radius: var(--radius); background: #000; }
-.feature-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.feature-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
-.feature-list small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.35; }
-.feature-status { font-size: 12px; font-weight: 700; }
-.feature-list .is-ok .feature-status { color: var(--ok); }
-.feature-list .is-missing .feature-status { color: var(--warn); }
-.scene-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 8px; }
-.scene-card.is-unsure { border-color: rgba(250,204,21,.5); }
-.scene-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.scene-head .kind { margin-left: 0; }
-.scene-head .btn { margin: 0 0 0 auto; }
-.scene-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-.scene-card-item { display: flex; flex-direction: column; gap: 4px; align-items: center; }
-.scene-card-item.is-unsure .mini-card { border-color: var(--warn); }
-.role-btn { min-height: 32px; padding: 0 8px; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border-strong); background: var(--surface-2); cursor: pointer; }
-.role-btn--dealer { color: #BFDBFE; border-color: rgba(96,165,250,.5); }
-.role-btn--player { color: #A7F3D0; border-color: rgba(52,211,153,.5); }
 .sub-content > [data-slot] { display: flex; flex-direction: column; gap: 14px; }
 .sub-content > [data-slot]:empty { display: none; }
 
-/* ===== Phase 7 (0.7.0): Strategie-Labor, Echtgeld & Risiko, Chat, Wissensbibliothek ===== */
+/* ===== Phase 7 (0.7.0): Strategie-Labor, Echtgeld & Risiko ===== */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .form-grid .field input, .form-grid .field select { width: 100%; box-sizing: border-box; }
 .notice--info { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); }
 .notice--info svg { color: var(--muted); }
-.yumeko-actions--v2 { margin-top: 8px; }
-.yumeko-actions--v2 .btn--yumeko { grid-column: 1 / -1; }
 
 /* Risiko */
 .risk-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--border-strong); background: var(--surface); }
@@ -996,27 +934,11 @@ html.is-standalone, html.is-standalone body { background: var(--bg); }
 .lab-table thead th { color: var(--muted); font-weight: 600; background: var(--surface-2); }
 .lab-table tbody th { text-align: left; }
 .lab-table tbody th small, .lab-table td small { display: block; color: var(--muted); font-weight: 400; }
-.kind--stage-observed { background: var(--surface-2); color: var(--text-2); }
-.kind--stage-hypothesis { background: var(--warn-bg); color: var(--warn); }
-.kind--stage-verified { background: rgba(52,211,153,.12); color: var(--ok); }
-.kind--stage-released { background: var(--yumeko-bg); color: var(--yumeko); }
 
 /* Verlauf / Protokoll */
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .history-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; overflow-wrap: anywhere; }
 
-/* Chat */
-.chat-log { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
-.chat-msg { max-width: 92%; padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
-.chat-msg p { margin: 0 0 4px; }
-.chat-msg p:last-of-type { margin-bottom: 0; }
-.chat-msg--user { align-self: flex-end; background: var(--text); color: var(--bg); border-bottom-right-radius: 4px; }
-.chat-msg--yumeko { align-self: flex-start; background: var(--surface); border: 1px solid rgba(245,181,68,.35); border-bottom-left-radius: 4px; }
-.chat-who { display: block; font-size: 12px; font-weight: 700; color: var(--yumeko); margin-bottom: 4px; letter-spacing: .04em; }
-.chat-basis { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
-.chat-form { display: flex; gap: 8px; }
-.chat-form input { flex: 1 1 auto; min-width: 0; min-height: 48px; font-size: 16px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); }
-.chat-form .btn { width: auto; flex: 0 0 auto; margin-top: 0; padding: 0 18px; }
 ul.ev-list { display: flex; flex-direction: column; gap: 6px; list-style: none; padding: 0; }
 ul.ev-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 ul.ev-list li:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -1024,33 +946,6 @@ ul.ev-list li > span { min-width: 0; color: var(--text-2); overflow-wrap: anywhe
 ul.ev-list li > b { text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; max-width: 55%; overflow-wrap: anywhere; }
 .segmented--3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
-/* ===== Phase 8 (0.8.0): Deckanzahl, Yumeko Academy ===== */
+/* ===== Phase 8 (0.8.0): Deckanzahl ===== */
 .segmented--decks { grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr)); margin-bottom: 8px; }
 .segmented--decks button { padding: 0 4px; }
-.yt-form { display: flex; flex-direction: column; gap: 8px; }
-.yt-form .field input { width: 100%; }
-.academy-list { display: flex; flex-direction: column; gap: 10px; }
-.academy-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
-.academy-card p { margin: 0; overflow-wrap: anywhere; }
-.academy-card .version-head strong { overflow-wrap: anywhere; min-width: 0; }
-.academy-card .version-head .kind { margin-left: 0; flex-shrink: 0; }
-.academy-card--verified { border-left: 4px solid var(--ok); }
-.academy-card--partial, .academy-card--unverifiable { border-left: 4px solid var(--warn); }
-.academy-card--error { border-left: 4px solid var(--danger); }
-.academy-card--running, .academy-card--verifying, .academy-card--transcript, .academy-card--strategies, .academy-card--frames { border-left: 4px solid var(--yumeko); }
-.academy-card .btn-row { flex-wrap: wrap; }
-.academy-card .btn-row .btn { flex: 0 1 auto; margin-top: 0; text-decoration: none; }
-.step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.step-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; align-items: start; color: var(--text-2); }
-.step-list li small { display: block; color: var(--muted); overflow-wrap: anywhere; }
-.step-list b { font-weight: 600; }
-.step-list .step-mark { font-weight: 700; text-align: center; }
-.step-list .step-ok .step-mark { color: var(--ok); }
-.step-list .step-fail .step-mark { color: var(--danger); }
-.step-list .step-run .step-mark { color: var(--yumeko); }
-.step-list .step-skip, .step-list .step-wait { opacity: .75; }
-.claim-mini { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.claim-mini li { overflow-wrap: anywhere; }
-.claim-mini .kind { margin: 0 6px 0 0; }
-.knowledge-card a { color: var(--stand); overflow-wrap: anywhere; }
-.screen-academy .tab-scroll { margin-bottom: 2px; }

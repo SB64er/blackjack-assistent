@@ -1,4 +1,4 @@
-// YUMEKO → Echtgeld & Risiko (optional).
+// Einstellungen → Echtgeld & Risiko (optional).
 // Budget, Startsaldo, Saldo, Einsätze und tatsächliche Auszahlungen protokollieren,
 // Verlustlimits, Warnungen, Stopp-Empfehlung und Risikoanalyse.
 // BJ.AI platziert keine Wetten, hat keinen Zugriff auf Casino-Konten und überträgt nichts.
@@ -6,7 +6,7 @@ import { View, subHeader } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { ENTRY_TEXT, computedPayout } from '../risk/bankroll.js';
 import { assessRisk, stakeCheck, RISK_LEVEL_TEXT, HAND_SD } from '../risk/risk.js';
-import { activeStrategyEVCached } from '../yumeko/decision.js';
+import { activeStrategyEVCached } from '../strategy/decision.js';
 import { fmtDateTime } from './archive-view.js';
 import { pct } from '../strategy/analysis.js';
 import { rulesText } from '../strategy/standard.js';
@@ -27,7 +27,7 @@ export class RiskView extends View {
     this._confirmClear = false;
     this._draft = { stake: '', extra: '', payout: '', outcome: null, blackjack: false, roundId: '', note: '' };
     this.el.innerHTML = `
-      ${subHeader('YUMEKO – Echtgeld & Risiko', 'yumeko')}
+      ${subHeader('Echtgeld & Risiko', 'einstellungen')}
       <div class="sub-content" data-slot="content"></div>`;
     this.el.addEventListener('click', (e) => this._onClick(e));
     this.el.addEventListener('input', (e) => this._onInput(e));
@@ -201,7 +201,7 @@ export class RiskView extends View {
         <section class="group">
           <h2 class="group-title">MATHEMATIK FÜR DEINE TISCHREGELN</h2>
           <p>${esc(rulesText(this.ctx.settings.get('rules')))} · ${esc(strat.profile)}: Erwartungswert <b>${pct(strat.ev, 2)}</b> pro Einsatz (exakt berechnet, unendliches Deck).</p>
-          ${risk.negativeEv ? `<p class="notice notice--warn">${ICONS.warning}<span>Negativer Erwartungswert: Auf lange Sicht verlierst du im Schnitt Geld. YUMEKO rät vom Spiel mit echtem Geld ab.</span></p>` : ''}
+          ${risk.negativeEv ? `<p class="notice notice--warn">${ICONS.warning}<span>Negativer Erwartungswert: Auf lange Sicht verlierst du im Schnitt Geld. Die App rät vom Spiel mit echtem Geld ab.</span></p>` : ''}
         </section>
         <label class="row row--check"><span>Ich habe verstanden, dass Blackjack zu finanziellen Verlusten führen kann und es keine Gewinngarantie gibt.</span><input type="checkbox" name="ack"></label>
         <button type="button" class="btn btn--primary" data-action="enable">Echtgeld-Modus aktivieren</button>`;

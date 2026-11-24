@@ -1,4 +1,4 @@
-// Tests für Phase 8 (Version 0.8.0): Intelligence & Academy.
+// Tests für Phase 8 (Version 0.8.0): Deckanzahl, exakte Engine, Archiv-Auswertung (Academy-Teile seit 0.9.0 entfernt).
 // Nummern beziehen sich auf den Auftrag (Abschnitt 12). Aufruf: npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,13 +12,6 @@ import { modelFor } from '../js/strategy/ev.js';
 import { decide } from '../js/strategy/engine.js';
 import { Simulation } from '../js/strategy/simulate.js';
 import { MemoryDatabase, STORES, DB_VERSION, MIGRATIONS, openDatabase, isQuotaError } from '../js/core/idb.js';
-import { parseYouTubeUrl, videoLink } from '../js/academy/youtube.js';
-import { extractClaims, claimText, parseUps } from '../js/academy/extract.js';
-import { verifyClaim, verifyCell } from '../js/academy/verify.js';
-import { AcademyStore, findConflicts, validateSource, academyStats, ACADEMY_FORMAT } from '../js/academy/academy-store.js';
-import { validateServerEndpoint, validateServerResponse, fetchVideoData, ServerError } from '../js/academy/server-client.js';
-import { KnowledgeStore } from '../js/yumeko/knowledge.js';
-import { buildDraft } from '../js/yumeko/yumeko.js';
 import { ArchiveStore } from '../js/archive/archive-store.js';
 import { validateRound } from '../js/archive/round-record.js';
 import { roundInsight, learningProgress, recurringMistakes, resultStats, uncertainCards } from '../js/archive/insights.js';
@@ -26,22 +19,6 @@ import { bankrollStats, defaultConfig } from '../js/risk/bankroll.js';
 import { assessRisk } from '../js/risk/risk.js';
 
 const R6 = { decks: 6, soft17: 'steht', das: true, payout: '3:2' };
-const settingsWith = (rules) => ({ get: (p) => (p === 'rules' ? rules : undefined) });
-const TRANSCRIPT = [
-  { start: 3, text: 'Always split aces and eights.' },
-  { start: 9, text: 'Hit 16 against a 10.' },
-  { start: 15, text: 'Never take insurance.' },
-  { start: 21, text: 'The dealer stands on soft 17.' }
-];
-function academy({ rules = R6, server = true, fetchVideo = null, db = new MemoryDatabase(), knowledge = null } = {}) {
-  const k = knowledge || new KnowledgeStore({ db });
-  const a = new AcademyStore({
-    db, knowledge: k, settings: settingsWith(rules),
-    serverConfig: () => ({ endpoint: server ? 'https://example.org/yumeko' : '' }),
-    fetchVideo: fetchVideo || (async () => ({ meta: { title: 'Basic Strategy', channel: 'Kanal' }, transcript: { available: true, language: 'en', segments: TRANSCRIPT }, frames: { available: false, reason: 'keine' } }))
-  });
-  return { a, k, db };
-}
 
 // --- 1. Unbekannte Deckanzahl -------------------------------------------------
 test('1 Unbekannte Deckanzahl: Standardprofil als gekennzeichnete Annahme, nie als erkannt', () => {
@@ -154,173 +131,12 @@ test('3 Datenbankmigration v2 → v3: nur neue Bereiche, nichts gelöscht', asyn
   assert.equal(fresh.created.length, STORES.length);
 });
 
-test('3 Bestehende Daten aus 0.7.0 bleiben erhalten; unlesbare Academy-Einträge werden nicht gelöscht', async () => {
-  const db = new MemoryDatabase();
-  await db.put('knowledge', { id: 'k1', category: 'hypothesis', content: 'Alte Erkenntnis', createdAt: '2026-11-01T10:00:00Z' });
-  await db.put('videos', { id: 'seq1', source: 'Datei', scenes: [] });
-  await db.put('sources', { id: 'kaputt', kind: 'youtube', videoId: 'zu-kurz' });
-  const { a, k } = academy({ db });
-  await a.ready(); await k.ready();
-  assert.equal(a.invalid, 1);
-  assert.ok(await db.get('sources', 'kaputt'), 'unlesbarer Eintrag bleibt in der Datenbank');
-  assert.equal(k.items.length, 1);
-  assert.equal(k.videos.length, 1);
-});
-
-test('3 Unterbrochene Analyse (App geschlossen) wird als Fehler mit Hinweis geladen', async () => {
-  const db = new MemoryDatabase();
-  await db.put('sources', { id: 'yt_dQw4w9WgXcQ', kind: 'youtube', videoId: 'dQw4w9WgXcQ', status: 'verifying', addedAt: '2026-11-22T10:00:00Z' });
-  const { a } = academy({ db });
-  await a.ready();
-  assert.equal(a.sources[0].status, 'error');
-  assert.match(a.sources[0].error, /unterbrochen/);
-});
-
 test('3 Speicher voll wird erkannt und verständlich gemeldet', async () => {
   assert.ok(isQuotaError({ name: 'QuotaExceededError' }));
   assert.ok(isQuotaError({ code: 'quota', message: '' }));
   assert.ok(!isQuotaError(new Error('anderer Fehler')));
   const full = new MemoryDatabase({ persist: { load: () => [], save: () => false } });
-  const { a } = academy({ db: full });
-  await a.ready();
-  await assert.rejects(() => a.addLink('https://youtu.be/dQw4w9WgXcQ', { autoStart: false }), (err) => err.code === 'quota' && /Speicher voll/.test(err.message));
-});
-
-// --- 4. Export und Import ---------------------------------------------------------
-test('4 Export und Import der Wissensdatenbank (ohne Überschreiben, doppelte erkannt)', async () => {
-  const { a } = academy();
-  await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const data = JSON.parse(JSON.stringify(a.exportData()));
-  assert.equal(data.format, ACADEMY_FORMAT);
-  assert.equal(data.sources.length, 1);
-  assert.ok(data.claims.length >= 4);
-  const { a: b } = academy();
-  const r1 = await b.importData(data);
-  assert.equal(r1.added, data.sources.length + data.claims.length);
-  assert.equal(b.claims.length, a.claims.length);
-  const r2 = await b.importData(data);
-  assert.equal(r2.added, 0);
-  assert.equal(r2.skipped, data.sources.length + data.claims.length);
-  await assert.rejects(() => b.importData({ format: 'falsch' }), /falsches Dateiformat/);
-  await assert.rejects(() => b.importData({ ...data, version: 99 }), /neueren App-Version/);
-});
-
-test('4 Einzelne Einträge löschen und gesamte Academy zurücksetzen (nur mit Bestätigung)', async () => {
-  const { a, k } = academy();
-  await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const n = a.claims.length;
-  await a.removeClaim(a.claims[0].id);
-  assert.equal(a.claims.length, n - 1);
-  await assert.rejects(() => a.resetAll(), /ausdrücklich bestätigen/);
-  await a.resetAll({ confirmed: true });
-  assert.equal(a.sources.length + a.claims.length + a.feedback.length, 0);
-  assert.equal(k.items.filter((i) => i.id.startsWith('academy:')).length, 0);
-});
-
-// --- 5. YouTube-Link-Validierung -----------------------------------------------------
-test('5 YouTube-Links: gültige Formen werden erkannt, alles andere abgelehnt', () => {
-  const ok = {
-    'https://www.youtube.com/watch?v=dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    'youtube.com/watch?v=dQw4w9WgXcQ&list=PL1': 'dQw4w9WgXcQ',
-    'https://youtu.be/dQw4w9WgXcQ?t=42': 'dQw4w9WgXcQ',
-    'https://m.youtube.com/watch?v=dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    'https://www.youtube.com/shorts/dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    'https://www.youtube.com/embed/dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    'https://www.youtube.com/live/dQw4w9WgXcQ': 'dQw4w9WgXcQ',
-    '  https://youtu.be/A-b_c1234567  ': null
-  };
-  for (const [url, id] of Object.entries(ok)) {
-    const r = parseYouTubeUrl(url);
-    if (id) { assert.ok(r.ok, url); assert.equal(r.videoId, id); assert.equal(r.url, `https://www.youtube.com/watch?v=${id}`); }
-  }
-  assert.equal(parseYouTubeUrl('https://youtu.be/dQw4w9WgXcQ?t=1m5s').start, 65);
-  const bad = {
-    '': 'empty', 'kein link': 'invalid', 'example.org/watch?v=dQw4w9WgXcQ': 'not-youtube', 'https://vimeo.com/123': 'not-youtube', 'https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ': 'not-youtube',
-    'https://www.youtube.com/watch?v=kurz': 'bad-id', 'https://www.youtube.com/playlist?list=PL123': 'playlist', 'https://www.youtube.com/@kanal': 'channel',
-    'javascript:alert(1)': 'invalid', 'ftp://youtube.com/watch?v=dQw4w9WgXcQ': 'protocol'
-  };
-  for (const [url, code] of Object.entries(bad)) {
-    const r = parseYouTubeUrl(url);
-    assert.equal(r.ok, false, url);
-    assert.equal(r.code, code, `${url}: ${r.code}`);
-  }
-  assert.equal(videoLink('dQw4w9WgXcQ', 75.4), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=75s');
-  assert.equal(videoLink('<script>'), null);
-});
-
-test('5 Doppelter Link wird erkannt (kein zweiter Eintrag)', async () => {
-  const { a } = academy();
-  await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const again = await a.addLink('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10');
-  assert.equal(again.duplicate, true);
-  assert.equal(a.sources.length, 1);
-});
-
-// --- 6. Nicht verfügbare Transkripte -------------------------------------------------
-test('6 Ohne Server: kein Transkript, ehrlicher Status, keine erfundenen Ergebnisse, kein Netzwerk', async () => {
-  let called = 0;
-  const { a } = academy({ server: false, fetchVideo: async () => { called += 1; throw new Error('darf nicht aufgerufen werden'); } });
-  const s = await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  assert.equal(called, 0, 'ohne Server wird nichts gesendet');
-  assert.equal(s.status, 'unverifiable');
-  assert.equal(s.steps.meta.state, 'skip');
-  assert.equal(s.steps.transcript.state, 'fail');
-  assert.match(s.steps.transcript.note, /Kein Transkript verfügbar/);
-  assert.equal(s.steps.frames.state, 'skip');
-  assert.equal(a.claims.length, 0, 'keine erfundenen Erkenntnisse');
-  assert.equal(s.title, null, 'kein erfundener Titel');
-});
-
-test('6 Server liefert kein Transkript: Status „Nicht überprüfbar“, Grund wird angezeigt', async () => {
-  const { a } = academy({ fetchVideo: async () => ({ meta: { title: 'T', channel: null }, transcript: { available: false, reason: 'Für dieses Video gibt es keine Untertitel.' }, frames: { available: false, reason: 'nein' } }) });
-  const s = await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  assert.equal(s.status, 'unverifiable');
-  assert.match(s.steps.transcript.note, /keine Untertitel/);
-  assert.equal(a.stats().noTranscript, 1);
-});
-
-test('6 Eingefügtes Transkript wird analysiert (manuelle Quelle gekennzeichnet)', async () => {
-  const { a } = academy({ server: false });
-  const s = await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const s2 = await a.setManualTranscript(s.id, '0:05\nAlways split aces and eights.\n1:10 Never take insurance.');
-  assert.equal(s2.transcript.source, 'manual');
-  assert.equal(s2.status, 'verified');
-  assert.equal(s2.counts.claims, 3);
-  const ins = a.claims.find((c) => c.type === 'insurance');
-  assert.equal(ins.sources[0].at, 70, 'Zeitstempel übernommen');
-});
-
-// --- 7. Fehlgeschlagene Videoanalysen ------------------------------------------------
-test('7 Fehlgeschlagene Analyse: Status Fehler mit Meldung, Wiederholen klappt danach', async () => {
-  let fail = true;
-  const { a } = academy({ fetchVideo: async () => { if (fail) throw new ServerError('failed', 'Der Server ist nicht erreichbar.'); return { meta: { title: 'X' }, transcript: { available: true, segments: TRANSCRIPT }, frames: { available: false } }; } });
-  const s = await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  assert.equal(s.status, 'error');
-  assert.match(s.error, /nicht erreichbar/);
-  assert.equal(s.steps.meta.state, 'fail');
-  assert.equal(a.stats().failed, 1);
-  fail = false;
-  const s2 = await a.analyze(s.id);
-  assert.equal(s2.status, 'verified');
-  assert.equal(s2.runs, 2);
-});
-
-test('7 Server-Schnittstelle: nur https ohne Schlüssel, Antworten streng geprüft', async () => {
-  assert.throws(() => validateServerEndpoint('http://x.example'), /https/);
-  assert.throws(() => validateServerEndpoint('https://x.example/?key=geheim'), /Schlüssel/);
-  assert.throws(() => validateServerEndpoint('https://user:pw@x.example'), /Zugangsdaten/);
-  assert.equal(validateServerEndpoint('https://x.example/yumeko'), 'https://x.example/yumeko');
-  assert.throws(() => validateServerResponse({ videoId: 'aaaaaaaaaaa' }, 'dQw4w9WgXcQ'), /anderes Video/);
-  const v = validateServerResponse({ transcript: { available: true, segments: [] } }, 'dQw4w9WgXcQ');
-  assert.equal(v.transcript.available, false, 'leeres Transkript gilt als nicht verfügbar');
-  await assert.rejects(() => fetchVideoData('dQw4w9WgXcQ', { config: { endpoint: '' } }), (e) => e.code === 'not-configured');
-  await assert.rejects(() => fetchVideoData('dQw4w9WgXcQ', { config: { endpoint: 'https://x' }, online: false }), (e) => e.code === 'offline');
-  let body = null;
-  await assert.rejects(() => fetchVideoData('dQw4w9WgXcQ', { config: { endpoint: 'https://x' }, online: true, fetchImpl: async (u, o) => { body = JSON.parse(o.body); return { ok: false, status: 500 }; } }), /HTTP 500/);
-  assert.deepEqual(Object.keys(body).sort(), ['app', 'schema', 'task', 'videoId', 'want'], 'nur Video-ID und App-Version werden gesendet');
-  const ok = await fetchVideoData('dQw4w9WgXcQ', { config: { endpoint: 'https://x' }, online: true, fetchImpl: async () => ({ ok: true, json: async () => ({ videoId: 'dQw4w9WgXcQ', title: 'T', transcript: { available: true, segments: [{ start: 1, text: 'hit 16 against 10' }] } }) }) });
-  assert.equal(ok.transcript.segments.length, 1);
+  await assert.rejects(() => full.put('rounds', { id: 'r_voll' }), (err) => err.code === 'quota' && /Speicher voll/.test(err.message));
 });
 
 // --- 8. Mathematische Strategieentscheidungen ----------------------------------------
@@ -462,16 +278,16 @@ test('11 Risikokontrolle: laufende Verlustserie erkannt, ohne Aufforderung zum Z
 // --- 12. Offline-Verhalten -----------------------------------------------------------
 test('12 Offline: neue Dateien im Offline-Speicher; Rechnen und Prüfen ohne Netzwerk', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  assert.match(sw, /bj-assistent-v0\.8\.0/);
-  const files = ['js/views/academy-view.js', 'js/academy/youtube.js', 'js/academy/extract.js', 'js/academy/verify.js', 'js/academy/server-client.js', 'js/academy/academy-store.js', 'js/archive/insights.js', 'js/strategy/exact.js', 'js/strategy/table-rules.js'];
+  assert.match(sw, /bj-assistent-v0\.9\.0/);
+  const files = ['js/archive/insights.js', 'js/strategy/exact.js', 'js/strategy/table-rules.js'];
   for (const f of files) {
     assert.ok(sw.includes(`'./${f}'`), `${f} im Offline-Speicher`);
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
     assert.ok(!/from '\//.test(src), `${f}: nur relative Importe`);
-    if (f !== 'js/academy/server-client.js') assert.ok(!/fetch\(/.test(src), `${f}: kein Netzwerkzugriff`);
+    assert.ok(!/fetch\(/.test(src), `${f}: kein Netzwerkzugriff`);
     assert.ok(!/(api[_-]?key|secret)\s*[:=]\s*['"][A-Za-z0-9]/i.test(src), `${f}: kein Schlüssel im Code`);
   }
-  for (const v of ['APP_VERSION = \'0.8.0', '"version": "0.8.0"']) {
+  for (const v of ['APP_VERSION = \'0.9.0', '"version": "0.9.0"']) {
     const src = readFileSync(new URL(v.startsWith('APP') ? '../js/core/version.js' : '../package.json', import.meta.url), 'utf8');
     assert.ok(src.includes(v), v);
   }
@@ -498,77 +314,4 @@ test('13/15 Kamera: Kameracode ist unverändert zu 0.7.0 (keine Änderung an Ber
     const src = readFileSync(new URL(`../${f}`, import.meta.url));
     assert.equal(createHash('sha256').update(src).digest('hex').slice(0, 16), h, `${f} unverändert`);
   }
-});
-
-// --- 14. Schutz vor ungeprüften Strategien --------------------------------------------
-test('14 Aussagen aus Videos: nur geprüfte werden Wissen, widerlegte ändern die Strategie nie', async () => {
-  const { a, k } = academy({ fetchVideo: async () => ({ meta: {}, transcript: { available: true, segments: [{ start: 1, text: 'Always stand on 12 against a 2. Hit 16 against a 10. Stand on 16 against a 10.' }] }, frames: { available: false } }) });
-  await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const stand12 = a.claims.find((c) => c.text.startsWith('Hart 12 gegen Dealer 2'));
-  assert.equal(stand12.status, 'contradicted');
-  assert.equal(stand12.flagged, true, 'widerlegte Aussage als fehlerhaft markiert');
-  const mirrored = k.get(`academy:${stand12.id}`);
-  assert.equal(mirrored.category, 'hypothesis');
-  assert.ok(!mirrored.data.cell, 'widerlegte Aussage trägt keine Tabellenzelle');
-  // Widerspruch zwischen Quellen erkannt
-  const conf = a.conflicts();
-  assert.ok(conf.list.some((c) => c.situation === 'hard:16:10'));
-  // Strategieentwurf: widerlegte/ungeprüfte Aussagen werden nicht übernommen
-  const draft = buildDraft({ rules: R6, items: k.items, number: 1 });
-  assert.ok(!draft.overrides['hard:12:2'], '12 gegen 2 bleibt Ziehen');
-  assert.ok(!draft.basis.adopted.some((x) => x.key === 'hard:12:2'));
-  assert.equal(draft.status, 'entwurf', 'auch geprüfte Aussagen wirken nur über Entwurf → Prüfung → Bestätigung');
-  // Eine ungeprüfte Aussage (z. B. manuell konstruiert) wird nicht gespiegelt
-  const before = k.items.length;
-  await a._mirrorToKnowledge([{ id: 'x', type: 'play', data: { cells: [{ kind: 'hard', value: 12, up: 2 }], action: 'STAND' }, text: 'x', sources: [], verification: null }]);
-  assert.equal(k.items.length, before);
-});
-
-test('14 Prüfung: Ergebnisarten bestätigt / widerlegt / teilweise / nicht überprüfbar', async () => {
-  const { claims } = extractClaims('Always split aces and eights. Stand on 12 against a 2. Double 11 against anything. The dealer stands on soft 17.');
-  const byText = Object.fromEntries(await Promise.all(claims.map(async (c) => [claimText(c), (await verifyClaim(c, R6)).verdict])));
-  assert.equal(byText['Paar A,A gegen jede Dealerkarte: Splitten'], 'confirmed');
-  assert.equal(byText['Hart 12 gegen Dealer 2: Stehen'], 'contradicted');
-  assert.equal(byText['Hart 11 gegen jede Dealerkarte: Verdoppeln'], 'partial', '11 gegen Ass hängt von Decks/Regeln ab');
-  assert.equal(byText['Tischregel: Dealer steht bei Soft 17'], 'unverifiable');
-  const cell = verifyCell({ kind: 'hard', value: 16, up: 10 }, 'STAND', false, R6);
-  assert.equal(cell.verdict, 'contradicted');
-});
-
-test('Texterkennung: Deutsch und Englisch, Negation, Bereiche, Zahlwörter', () => {
-  const t = (s) => extractClaims(s).claims.map(claimText);
-  assert.deepEqual(t('Asse und Achten immer splitten. Bei 16 gegen 10 solltest du ziehen.').sort(), ['Hart 16 gegen Dealer 10: Ziehen', 'Paar 8,8 gegen jede Dealerkarte: Splitten', 'Paar A,A gegen jede Dealerkarte: Splitten']);
-  assert.deepEqual(t('never split tens'), ['Paar 10,10 gegen jede Dealerkarte: nicht Splitten']);
-  assert.deepEqual(t('sixteen against ten you hit'), ['Hart 16 gegen Dealer 10: Ziehen']);
-  assert.deepEqual(t('A,7 against 2 through 8 stand'), ['Weich 18 (A,7) gegen Dealer 2 bis 8: Stehen']);
-  assert.deepEqual(parseUps('7 or higher'), [7, 8, 9, 10, 11]);
-  assert.deepEqual(parseUps('9, 10 and ace'), [9, 10, 11]);
-  assert.deepEqual(t('Das Wetter ist schön und wir spielen Karten.'), [], 'kein Blackjack-Inhalt → keine Aussage');
-  const r = extractClaims([{ start: 12, text: 'Der Dealer überkauft sich mit einer 6 in etwa 42 Prozent der Fälle' }]);
-  assert.equal(r.claims[0].type, 'probability');
-  assert.equal(r.claims[0].at, 12);
-  assert.ok(r.topics.includes('probability'));
-});
-
-test('Lernstatistik: alle Zahlen aus gespeicherten Daten', async () => {
-  const empty = academyStats({});
-  assert.equal(empty.videos + empty.confirmed + empty.failed + empty.claims, 0);
-  const { a } = academy();
-  await (await a.addLink('https://youtu.be/dQw4w9WgXcQ')).done;
-  const s = a.stats();
-  assert.equal(s.videos, 1);
-  assert.equal(s.analyzed, 1);
-  assert.equal(s.claims, a.claims.length);
-  assert.equal(s.confirmed, a.claims.filter((c) => c.status === 'confirmed').length);
-  assert.ok(validateSource(a.sources[0]));
-  assert.equal(findConflicts(a.claims).list.length, 0);
-});
-
-test('Kamera-Lernmodus: Fehlerkennung melden speichert nur Kartenwerte', async () => {
-  const { a } = academy();
-  const f = await a.addFeedback({ kind: 'wrong-card', roundId: 'r1', dealer: [{ rank: 'K', score: 0.7, image: 'data:...' }], hands: [[{ rank: '5', score: 0.9 }]], uncertain: true });
-  assert.deepEqual(Object.keys(f.dealer[0]).sort(), ['rank', 'score'], 'keine Bilder');
-  assert.equal(a.stats().feedback, 1);
-  await a.removeFeedback(f.id);
-  assert.equal(a.feedback.length, 0);
 });
