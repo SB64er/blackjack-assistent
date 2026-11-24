@@ -1,4 +1,4 @@
-# Blackjack Assistent – PWA (Phase 1–8, Version 0.9.0)
+# Blackjack Assistent – PWA (Phase 1–8, Version 0.10.0)
 
 Reine Web-App ohne Build-Schritt: HTML, CSS und JavaScript-Module.
 Alle Daten (Einstellungen, Kalibrierung, angelernte Karten, Strategieprofile, Spielarchiv,
@@ -8,6 +8,9 @@ Echtgeld-Protokoll, Simulationen) bleiben lokal auf dem Gerät.
 > Academy sind entfernt (Vorbereitung für eine Neuentwicklung). Siehe Abschnitt
 > [„Version 0.9.0 – alte YUMEKO-KI entfernt“](#version-090--alte-yumeko-ki-entfernt).
 > Die Beschreibungen der Phasen 6–8 weiter unten sind historisch.
+>
+> **Version 0.10.0:** Grundgerüst des neuen Yumeko-Lernzentrums (ohne KI). Siehe Abschnitt
+> [„Version 0.10.0 – Yumeko-Lernzentrum (Grundgerüst)“](#version-0100--yumeko-lernzentrum-grundgerüst).
 
 ## Struktur
 
@@ -97,11 +100,13 @@ npm run test:browser   # Chromium in iPad-/iPhone-Grössen (benötigt Playwright
                        # Phase 7: Echtgeld/Limits/Stopp, Labor, Neustart
                        # Phase 8: Deckanzahl „Unbekannt“, Offline, Kamera, iPhone-Überlauf
                        # 0.9.0: Übernahme eines 0.8.0-Stands, KI-Gedächtnis sichern und löschen
+                       # 0.10.0: Lernzentrum in allen Grössen, Yumeko-Profil ein/aus
 ```
 
 `tests/phase8.test.mjs` prüft Datenbank-Migration, Speicherfehler, Rechenmodell, exakte Engine, Deckanzahl und
 unveränderte Kamera-Dateien; `tests/phase9.test.mjs` (ab 0.9.0) prüft das Entfernen der alten YUMEKO-KI, die
 Profil-Migration, Sicherung und Löschen des KI-Gedächtnisses und unveränderte Kamera-/Erkennungs-/Logik-Dateien.
+`tests/phase10.test.mjs` (ab 0.10.0) prüft Yumeko-Profil, Statistik und Ein-/Ausschalten im Lernzentrum.
 
 ## Voraussetzungen
 
@@ -504,3 +509,25 @@ weiterhin importieren; enthaltene YUMEKO-/Academy-Daten werden dabei nicht über
 
 `npm test` (Logik, inkl. `tests/phase9.test.mjs`) und `npm run test:browser` (u. a. Übernahme eines 0.8.0-Stands mit aktivem
 YUMEKO-Profil, Sicherung und Löschen in iPad- und iPhone-Grösse).
+
+## Version 0.10.0 – Yumeko-Lernzentrum (Grundgerüst)
+
+Grundlage für die neue Yumeko-KI, die später Schritt für Schritt entwickelt wird. **Noch keine KI,
+keine Lernalgorithmen, keine Strategien und keine automatischen Lernfunktionen.**
+
+- **Lern-Knopf** (Doktorhut) im Hauptbildschirm zwischen Kamera und Einstellungen öffnet das Lernzentrum
+  (Navigation ohne URL-Änderung, die Kamera läuft weiter).
+- **Design** nach dem Entwurf „Lernzentrum – iPad quer“ (1180×820): Kopfzeile mit Status und Avatar,
+  Statistik (Hand, Wins, Lose, Bust, Gleichstand), Karte „Yumeko Profil“, vier Bereiche
+  (Karten, AI Table, Study, Brain) und Knopf „Yumeko Profil aktivieren“. Auf dem iPad (quer und hoch)
+  füllt es genau den Bildschirm, auf dem iPhone wird gescrollt. Schriften der App, keine externen Dateien.
+- **Bereiche**: öffnen ein Fenster mit Beschreibung und Platzhalter. Der Inhalt folgt später.
+- **Yumeko-Profil**: „Yumeko Profil aktivieren“ legt in den Strategieprofilen das Profil „Yumeko“
+  (ID/Typ `yumeko-ai`) an und macht es aktiv. Erneutes Tippen schaltet zurück auf das vorher aktive
+  Profil (gemerkt in `bjassist.lernzentrum`). Das Profil ist gesperrt (nicht bearbeitbar, nicht löschbar,
+  duplizierbar) und nutzt vorerst die Standardstrategie – die Empfehlungen ändern sich also nicht.
+  Bewusst ein anderer Typ als das frühere `yumeko`, das beim Laden weiterhin entfernt wird.
+- **Statistik**: Hände aus dem Spielarchiv, die mit aktivem Yumeko-Profil gespielt wurden; startet bei 0.
+  „Bust“ (eigene Hand über 21) wird getrennt von „Lose“ gezählt; offene Ergebnisse zählen nicht.
+- Alle bisherigen Daten und Funktionen bleiben unverändert, auch das gesicherte alte KI-Gedächtnis.
+- Sicherung vor der Integration: Branch `sicherung/v0.9.0` und ZIP im Projektordner `sicherung/`.

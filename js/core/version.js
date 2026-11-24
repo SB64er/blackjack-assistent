@@ -1,1 +1,1 @@
-export const APP_VERSION = '0.9.0 (Yumeko entfernt)';
+export const APP_VERSION = '0.10.0 (Lernzentrum)';

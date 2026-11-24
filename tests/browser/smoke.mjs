@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.9.0 angezeigt`, (await page.textContent('.footnote')).includes('0.9.0'));
+    check(`${name}: Version 0.10.0 angezeigt`, (await page.textContent('.footnote')).includes('0.10.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -150,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.9.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.10.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -536,6 +536,55 @@ try {
     check(`${label}: KI-Gedächtnis gelöscht, Archiv, Echtgeld-Einstellungen und Profile bleiben`, after.knowledge === 0 && after.claims === 0 && after.rounds === 1 && after.meta.join() === 'bankroll' && after.chat === null && after.profiles, JSON.stringify(after));
     check(`${label}: Bestätigung angezeigt`, /wurde gelöscht/.test(await page.textContent('.sub-content')));
     check(`${label}: nach dem Löschen ohne Überlauf`, !(await overflow(page)));
+    check(`${label}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 15) 0.10.0: Yumeko-Lernzentrum (Grundgerüst) – Knopf, Layout in allen Grössen, Profil ein/aus
+  for (const [name, size] of Object.entries(SIZES)) {
+    const label = `Lernzentrum ${name}`;
+    const shot = (file) => (process.env.LZ_SHOTS ? page.screenshot({ path: `${process.env.LZ_SHOTS}/${file}` }) : null);
+    const slug = name.split(' ').join('-');
+    const { ctx, page, errors } = await newPage(size);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    const order = await page.$$eval('.topbar-actions [data-nav]', (els) => els.map((e) => e.dataset.nav));
+    check(`${label}: Lern-Knopf zwischen Kamera und Einstellungen`, order.join() === 'kamera,lernzentrum,einstellungen', order.join());
+    check(`${label}: Hauptansicht mit Lern-Knopf ohne Überlauf`, !(await overflow(page)));
+    await shot(`main-${slug}.png`);
+    await page.click('[data-nav="lernzentrum"]');
+    await page.waitForSelector('.screen-lz');
+    check(`${label}: vier Bereiche und Statistik`, (await page.$$('.lz-tile')).length === 4 && (await page.$$('.lz-stat')).length === 5);
+    check(`${label}: Statistik startet bei 0`, (await page.$$eval('.lz-stat-value', (els) => els.map((e) => e.textContent))).join() === '0,0,0,0,0');
+    check(`${label}: ohne seitlichen Überlauf`, !(await overflow(page)));
+    if (size[0] >= 760 && size[1] > 700) {
+      const fits = await page.evaluate(() => {
+        const b = document.querySelector('.lz-activate').getBoundingClientRect();
+        return b.bottom <= window.innerHeight + 1 && document.documentElement.scrollHeight <= window.innerHeight + 1;
+      });
+      check(`${label}: passt ohne Scrollen auf den Bildschirm`, fits);
+      const tile = await page.$eval('.lz-tile', (e) => e.getBoundingClientRect().height);
+      check(`${label}: Kacheln gross genug zum Tippen`, tile >= 150, String(Math.round(tile)));
+    }
+    await shot(`lz-${slug}.png`);
+    await page.click('.lz-tile[data-id="study"]');
+    await page.waitForSelector('.lz-dialog');
+    check(`${label}: Bereich öffnet Fenster mit Platzhalter`, /Study/.test(await page.textContent('.lz-dialog')) && /Platzhalter/.test(await page.textContent('.lz-dialog')));
+    if (name === 'iPad quer') await shot('lz-dialog.png');
+    await page.click('.lz-dialog [data-lz="close"]');
+    check(`${label}: Fenster schliesst`, !(await page.$('.lz-dialog')));
+    await page.click('.lz-activate');
+    const on = await page.evaluate(() => ({ id: window.__bj.profiles.activeId, saved: JSON.parse(localStorage.getItem('bjassist.strategyProfiles')).activeId }));
+    check(`${label}: Aktivieren schaltet Yumeko-Profil in den Strategieprofilen ein`, on.id === 'yumeko-ai' && on.saved === 'yumeko-ai', JSON.stringify(on));
+    check(`${label}: Knopf und Status zeigen aktiv`, /Yumeko Profil aktiv/.test(await page.textContent('.lz-activate')) && (name.startsWith('iPhone') || /Profil aktiv/.test(await page.textContent('.lz-status'))));
+    if (name === 'iPad quer') await shot('lz-aktiv.png');
+    await page.click('[data-nav="haupt"]');
+    await page.waitForSelector('.screen-main');
+    check(`${label}: Hauptbildschirm zeigt Profil Yumeko`, /Yumeko/.test(await page.textContent('.screen-main')));
+    await page.click('[data-nav="lernzentrum"]');
+    await page.waitForSelector('.screen-lz');
+    await page.click('.lz-activate');
+    check(`${label}: Ausschalten -> wieder Standardstrategie`, await page.evaluate(() => window.__bj.profiles.activeId) === 'standard');
     check(`${label}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }

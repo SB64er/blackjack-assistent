@@ -66,6 +66,7 @@ export class MainView extends View {
         <nav class="topbar-actions">
           <span data-slot="fs"></span>
           <button type="button" class="icon-btn" data-nav="kamera" aria-label="Kamera und Kalibrierung">${ICONS.camera}</button>
+          <button type="button" class="icon-btn icon-btn--learn" data-nav="lernzentrum" aria-label="Yumeko Lernzentrum">${ICONS.learn}</button>
           <button type="button" class="icon-btn" data-nav="einstellungen" aria-label="Einstellungen">${ICONS.gear}</button>
         </nav>
       </header>

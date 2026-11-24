@@ -4,7 +4,7 @@ import { View, subHeader } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { typeBadge } from './strategy-view.js';
 import { RULES } from './settings-view.js';
-import { STANDARD_ID } from '../strategy/profiles.js';
+import { STANDARD_ID, YUMEKO_TYPE, isLockedProfile } from '../strategy/profiles.js';
 import {
   ROWS, UPCARDS, cellKey, standardCode, CODES_BY_KIND, CODE_LABEL, rulesText, upLabel, rowLabel, STANDARD_SOURCE, normalizeRules
 } from '../strategy/standard.js';
@@ -61,7 +61,7 @@ export class ProfileView extends View {
 
   get editable() {
     const p = this.profile;
-    return p && p.type !== 'standard' && !this.ctx.profiles.readOnly;
+    return p && !isLockedProfile(p) && !this.ctx.profiles.readOnly;
   }
 
   _strategyRules(p) {
@@ -289,6 +289,16 @@ export class ProfileView extends View {
           </div>
         </section>`;
     }
+    if (p.type === YUMEKO_TYPE) {
+      return `
+        <section class="group">
+          <h2 class="group-title">YUMEKO</h2>
+          <div class="source-box source-box--yumeko">
+            <strong>Lernzentrum</strong>
+            <p class="hint">Dieses Profil gehört zur neuen Yumeko-KI. Yumeko lernt noch nichts; bis dahin gelten die Empfehlungen der Standardstrategie. Ein- und ausschalten im Lernzentrum.</p>
+          </div>
+        </section>`;
+    }
     if (p.type !== 'ai') return '';
     const d = p.data || {};
     const res = d.research || { status: 'skipped' };
@@ -340,7 +350,7 @@ export class ProfileView extends View {
       : `<p class="profile-card-desc">${esc(p.description)}</p>
          <button type="button" class="btn btn--secondary" data-action="duplicate">Duplizieren, um eine eigene Version zu bearbeiten</button>`;
 
-    const rulesBox = p.type === 'standard'
+    const rulesBox = isLockedProfile(p)
       ? `<p class="hint">Folgt immer den Tischregeln: ${esc(rulesText(this._tableRules()))}</p>`
       : `
         <div class="list">

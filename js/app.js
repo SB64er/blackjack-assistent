@@ -28,6 +28,7 @@ import { SimulationStore } from './strategy/sim-store.js';
 import { LabView } from './views/lab-view.js';
 import { RiskView } from './views/risk-view.js';
 import { LegacyAiMemory } from './core/legacy-ai.js';
+import { LernzentrumView } from './views/lernzentrum-view.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -89,7 +90,8 @@ const ROUTES = {
   archiv: ArchiveView,
   runde: RoundView,
   labor: LabView,
-  risiko: RiskView
+  risiko: RiskView,
+  lernzentrum: LernzentrumView
 };
 
 const root = document.getElementById('app');

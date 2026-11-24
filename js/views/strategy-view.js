@@ -2,7 +2,7 @@
 // löschen, KI-Strategie erstellen. Profilwechsel ohne Neuladen.
 import { View, subHeader } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
-import { TYPE_LABEL, STANDARD_ID } from '../strategy/profiles.js';
+import { TYPE_LABEL, STANDARD_ID, isLockedProfile } from '../strategy/profiles.js';
 import { rulesText, normalizeRules } from '../strategy/standard.js';
 import { RULES } from './settings-view.js';
 import {
@@ -262,9 +262,9 @@ export class StrategyView extends View {
           ${st.rulesMismatch ? `<p class="meta text-warn">${ICONS.warning} Für andere Tischregeln erstellt</p>` : ''}
           <div class="profile-actions">
             ${isActive ? '' : `<button type="button" class="btn btn--primary btn--compact" data-action="activate" data-id="${esc(p.id)}">Aktivieren</button>`}
-            <button type="button" class="btn btn--secondary btn--compact" data-action="open" data-id="${esc(p.id)}">${p.type === 'standard' ? 'Ansehen' : 'Bearbeiten'}</button>
+            <button type="button" class="btn btn--secondary btn--compact" data-action="open" data-id="${esc(p.id)}">${isLockedProfile(p) ? 'Ansehen' : 'Bearbeiten'}</button>
             <button type="button" class="btn btn--ghost btn--compact" data-action="duplicate" data-id="${esc(p.id)}">Duplizieren</button>
-            ${p.type === 'standard' ? '' : (isActive
+            ${isLockedProfile(p) ? '' : (isActive
               ? '<span class="hint profile-hint">Aktives Profil – zum Löschen zuerst ein anderes aktivieren</span>'
               : `<button type="button" class="btn ${confirm ? 'btn--danger' : 'btn--ghost'} btn--compact" data-action="delete" data-id="${esc(p.id)}">${confirm ? 'Wirklich löschen?' : 'Löschen'}</button>`)}
           </div>
