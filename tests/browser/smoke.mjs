@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.8.0 angezeigt`, (await page.textContent('.footnote')).includes('0.8.0'));
+    check(`${name}: Version 0.9.0 angezeigt`, (await page.textContent('.footnote')).includes('0.9.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -150,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.8.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.9.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -216,7 +216,7 @@ try {
     await page.reload();
     await page.waitForSelector('.screen-main');
     const after = await page.evaluate(() => ({ n: window.__bj.profiles.list().length, active: window.__bj.profiles.active.name }));
-    check('Profile: nach Neuladen wiederhergestellt', after.n === 3 && after.active === 'Testprofil', JSON.stringify(after));
+    check('Profile: nach Neuladen wiederhergestellt', after.n === 2 && after.active === 'Testprofil', JSON.stringify(after));
     // Aktives Profil kann nicht gelöscht werden
     await page.click('.profile-tag');
     await page.waitForSelector('.profile-card');
@@ -228,10 +228,10 @@ try {
     const testCard = () => page.locator('.profile-card', { hasText: 'Testprofil' }).locator('[data-action="delete"]');
     await testCard().click();
     const stillThere = await page.evaluate(() => window.__bj.profiles.list().length);
-    check('Profile: Löschen braucht Bestätigung', stillThere === 3, String(stillThere));
+    check('Profile: Löschen braucht Bestätigung', stillThere === 2, String(stillThere));
     await testCard().click();
     const left = await page.evaluate(() => window.__bj.profiles.list().map((p) => p.id));
-    check('Profile: nach Bestätigung gelöscht', left.length === 2 && left[0] === 'standard' && left[1] === 'yumeko', left.join(','));
+    check('Profile: nach Bestätigung gelöscht', left.length === 1 && left[0] === 'standard', left.join(','));
     // KI-Strategie ohne Server: berechnet lokal, zeigt offen "nicht eingerichtet"
     await page.click('[data-action="ai"]');
     await page.waitForSelector('[data-action="ai-run"]');
@@ -259,7 +259,7 @@ try {
     await page.goto(BASE);
     await page.waitForSelector('.screen-main');
     const m = await page.evaluate(() => ({ active: window.__bj.profiles.activeId, n: window.__bj.profiles.list().length, s17: window.__bj.settings.get('rules.soft17'), mode: window.__bj.settings.get('roundMode') }));
-    check('Migration 0.4.0: Standardprofil aktiv, Einstellungen unverändert', m.active === 'standard' && m.n === 2 && m.s17 === 'zieht' && m.mode === 'manuell', JSON.stringify(m));
+    check('Migration 0.4.0: Standardprofil aktiv, Einstellungen unverändert', m.active === 'standard' && m.n === 1 && m.s17 === 'zieht' && m.mode === 'manuell', JSON.stringify(m));
     // Ohne Aufgeben-Regel: 16 gegen 10 = Ziehen statt Aufgeben
     await page.evaluate(() => { for (let i = 0; i < 4; i++) document.querySelector('[data-action="next-demo"]').click(); });
     check('Regeln: ohne Aufgeben wird 16 gegen 10 zu ZIEHEN', (await page.textContent('.rec-word')).trim() === 'ZIEHEN');
@@ -289,7 +289,7 @@ try {
     check('GitHub Pages: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
-  // 10) Phase 6: Live-Runde -> Archiv -> Korrektur -> YUMEKO lernt -> Strategieversion
+  // 10) Phase 6: Live-Runde -> Archiv -> Korrektur (YUMEKO-Teile seit 0.9.0 entfernt)
   {
     const { ctx, page, errors } = await newPage(SIZES['iPad quer'], () => {
       if (sessionStorage.getItem('seeded6')) return;
@@ -334,33 +334,15 @@ try {
     check('Archiv: Karte korrigiert und als manuell bestätigt markiert', corrected);
     const rec1 = await page.evaluate(() => window.__bj.archive.rounds[0]);
     check('Archiv: Werte nach Korrektur neu berechnet (Dealer 7+A = 18, 16 verliert)', rec1.dealer.total === 18 && rec1.hands[0].outcome === 'loss' && rec1.status !== 'incomplete', JSON.stringify({ d: rec1.dealer.total, o: rec1.hands[0].outcome, s: rec1.status }));
-    // Export enthält Runden und YUMEKO-Wissen
-    const exp = await page.evaluate(async () => { const d = await window.__bj.archive.exportData({ yumeko: window.__bj.knowledge.exportData() }); return { n: d.rounds.length, k: d.yumeko.knowledge.length }; });
-    check('Archiv: JSON-Export mit Runden und Wissen', exp.n === 1 && exp.k >= 1, JSON.stringify(exp));
-    // YUMEKO: analysieren, Entwurf, prüfen, bestätigen
-    await page.evaluate(() => window.__bj.navigate('yumeko'));
-    await page.waitForSelector('[data-action="analyze"]');
-    await page.click('[data-action="analyze"]');
-    await page.waitForSelector('.luck-grid', { timeout: 5000 });
-    const k = await page.evaluate(() => window.__bj.knowledge.items.filter((i) => i.category === 'verified' && i.id.includes('hard:16:7')).length);
-    check('YUMEKO: Fehler (Stehen bei 16 gegen 7) als geprüfte Erkenntnis gespeichert', k === 1);
-    await page.click('[data-action="draft"]');
-    await page.waitForSelector('[data-action="verify"]');
-    await page.click('[data-action="verify"]');
-    await page.waitForSelector('[data-action="confirm"]', { timeout: 10000 });
-    await page.click('[data-action="confirm"]');
-    await page.click('[data-action="confirm"]');
-    const v = await page.waitForFunction(() => window.__bj.profiles.get('yumeko').data.strategyVersion === 1, null, { timeout: 5000 }).then(() => true).catch(() => false);
-    check('YUMEKO: Strategieversion erst nach Prüfung und Bestätigung aktiv', v);
-    await page.click('[data-action="activate"]');
-    check('YUMEKO: als einziges Profil aktiv', await page.evaluate(() => window.__bj.profiles.activeId === 'yumeko' && window.__bj.profiles.list().filter((p) => p.id === window.__bj.profiles.activeId).length === 1));
-    check('YUMEKO: Lernzentrum ohne Überlauf', !(await overflow(page)));
-    // Wissen bleibt nach Neustart erhalten
+    // Export enthält Runden (seit 0.9.0 ohne alte KI-Daten)
+    const exp = await page.evaluate(async () => { const d = await window.__bj.archive.exportData({}); return { n: d.rounds.length, y: 'yumeko' in d }; });
+    check('Archiv: JSON-Export mit Runden', exp.n === 1 && !exp.y, JSON.stringify(exp));
+    // Archiv bleibt nach Neustart erhalten
     await page.reload();
     await page.waitForSelector('.screen-main');
-    const persisted = await page.evaluate(async () => { await window.__bj.knowledge.ready(); await window.__bj.archive.ready(); return { k: window.__bj.knowledge.items.length, r: window.__bj.archive.rounds.length, v: window.__bj.knowledge.versions.length }; });
-    check('YUMEKO: Wissen, Archiv und Versionen nach Neustart erhalten', persisted.k > 2 && persisted.r === 1 && persisted.v === 1, JSON.stringify(persisted));
-    // Demo mit YUMEKO: Empfehlung mit Begründung, nie Aufgeben
+    const persisted = await page.evaluate(async () => { await window.__bj.archive.ready(); return window.__bj.archive.rounds.length; });
+    check('Archiv: Runde nach Neustart erhalten', persisted === 1, String(persisted));
+    // Demo: Empfehlung, nie Aufgeben
     await page.evaluate(() => window.__bj.settings.set('demo', true));
     await page.waitForSelector('.rec-word');
     let sawSurrender = false;
@@ -370,14 +352,7 @@ try {
       await page.evaluate(() => document.querySelector('[data-action="next-demo"]').click());
     }
     check('Aufgeben erscheint nirgends in den Empfehlungen', !sawSurrender);
-    // Video lernen: Live-Erkennung pausiert, Hinweise "Noch nicht verfügbar"
-    await page.evaluate(() => window.__bj.navigate('video'));
-    await page.waitForSelector('.feature-list');
-    check('Video: Live-Spielerkennung pausiert', await page.evaluate(() => window.__bj.recognition.pausedFor === 'video'));
-    check('Video: nicht unterstützte Funktionen klar markiert', (await page.locator('.feature-list .is-missing').count()) === 3);
-    await page.evaluate(() => window.__bj.navigate('haupt'));
-    check('Video: Erkennung nach Verlassen wieder aktiv', await page.evaluate(() => !window.__bj.recognition.pausedFor));
-    for (const v2 of ['wissen', 'einstellungen', 'video']) {
+    for (const v2 of ['einstellungen', 'labor', 'risiko', 'strategie']) {
       await page.evaluate((n) => window.__bj.navigate(n), v2);
       await page.waitForTimeout(200);
       check(`Ansicht ${v2}: ohne Überlauf`, !(await overflow(page)));
@@ -391,7 +366,7 @@ try {
     const { ctx, page, errors } = await newPage(SIZES.iPhone);
     await page.goto(BASE);
     await page.waitForSelector('.screen-main');
-    for (const v3 of ['archiv', 'yumeko', 'wissen', 'video', 'labor', 'risiko', 'chat']) {
+    for (const v3 of ['archiv', 'labor', 'risiko', 'einstellungen', 'strategie']) {
       await page.evaluate((n) => window.__bj.navigate(n), v3);
       await page.waitForTimeout(200);
       check(`iPhone ${v3}: ohne Überlauf`, !(await overflow(page)));
@@ -400,7 +375,7 @@ try {
     await ctx.close();
   }
 
-  // 12) Phase 7: Strategie-Labor, Echtgeld & Risiko, Chat, Wissensbibliothek
+  // 12) Phase 7: Strategie-Labor, Echtgeld & Risiko (Chat und Wissensbibliothek seit 0.9.0 entfernt)
   {
     const { ctx, page, errors } = await newPage(SIZES['iPad quer']);
     await page.goto(BASE);
@@ -445,31 +420,21 @@ try {
     check('Hauptansicht: Risikoleiste getrennt von der Spielempfehlung (STOPP)', /STOPP/.test(await page.textContent('.risk-strip')) && /Spielempfehlung ≠ Empfehlung, Geld einzusetzen/.test(await page.textContent('.risk-strip')));
     check('Hauptansicht mit Risikoleiste ohne Überlauf', !(await overflow(page)));
     // Strategie-Labor
+    await page.evaluate(() => window.__bj.profiles.duplicate('standard', 'Vergleichsprofil'));
     await page.evaluate(() => window.__bj.navigate('labor'));
     await page.waitForSelector('[data-action="run"]');
+    for (const box of await page.locator('input[name="pick"]').all()) if (!(await box.isChecked())) await box.check();
     await page.selectOption('select[name="rounds"]', '10000');
     await page.click('[data-action="run"]');
     await page.waitForSelector('.lab-table', { timeout: 60000 });
     const rows = await page.locator('.lab-table tbody tr').count();
-    check('Labor: Vergleich Standard vs. YUMEKO unter gleichen Bedingungen', rows === 2);
+    check('Labor: Vergleich zweier Profile unter gleichen Bedingungen', rows === 2, String(rows));
     check('Labor: exakte Mathematik und Simulation getrennt ausgewiesen', /Exakte Mathematik/.test(await page.textContent('.lab-table thead')) && /Simulation/.test(await page.textContent('.lab-table thead')));
     await page.click('[data-action="save"]');
     await page.waitForFunction(() => window.__bj.simulations.list.length === 1, null, { timeout: 5000 }).catch(() => {});
     const sims = await page.evaluate(() => ({ sims: window.__bj.simulations.list.length, rounds: window.__bj.archive.rounds.length }));
     check('Labor: Simulation getrennt gespeichert (nicht im Spielarchiv)', sims.sims === 1 && sims.rounds === 0, JSON.stringify(sims));
     check('Labor: ohne Überlauf', !(await overflow(page)));
-    // Chat
-    await page.evaluate(() => window.__bj.navigate('chat'));
-    await page.waitForSelector('.chat-form');
-    await page.fill('input[name="q"]', 'Wie hoch waren meine tatsächlichen Verluste?');
-    await page.press('input[name="q"]', 'Enter');
-    await page.waitForSelector('.chat-msg--yumeko');
-    check('Chat: Antwort aus echten Daten (verloren 20.00 CHF)', /verloren 20\.00 CHF/.test(await page.textContent('.chat-msg--yumeko')));
-    check('Chat: ohne Überlauf', !(await overflow(page)));
-    // Wissensbibliothek: Lernverlauf
-    await page.evaluate(() => window.__bj.navigate('wissen'));
-    await page.click('[data-action="cat"][data-cat="history"]');
-    check('Wissen: Lernverlauf sichtbar', /Simulation gespeichert/.test(await page.textContent('.sub-content')));
     // Neustart: Echtgeld-Daten und Simulation bleiben
     await page.reload();
     await page.waitForSelector('.screen-main');
@@ -478,7 +443,7 @@ try {
     check('Phase 7: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
-  // 13) Phase 8: Deckanzahl „Unbekannt“, Yumeko Academy, Offline, Kamera
+  // 13) Phase 8: Deckanzahl „Unbekannt“, Offline, Kamera (Academy seit 0.9.0 entfernt)
   {
     const { ctx, page, errors } = await newPage(SIZES['iPad hoch']);
     const external = [];
@@ -494,90 +459,84 @@ try {
     await page.waitForSelector('.screen-main');
     await page.click('[data-nav="einstellungen"]');
     check('Deckanzahl: „Unbekannt“ bleibt nach Neustart ausgewählt', (await page.getAttribute('[data-action="decks"][data-value="unbekannt"]', 'aria-pressed')) === 'true');
-    // Academy: Link einfügen startet die Analyse automatisch (ohne Server: ehrlich „kein Transkript“)
-    await page.evaluate(() => window.__bj.navigate('akademie'));
-    await page.waitForSelector('input[name="yt-url"]');
-    await page.fill('input[name="yt-url"]', 'https://youtu.be/dQw4w9WgXcQ');
-    await page.waitForFunction(() => { const s = window.__bj.academy.sources[0]; return s && s.status === 'unverifiable'; }, null, { timeout: 8000 });
-    const card = await page.textContent('.academy-card');
-    check('Academy: Link startet Analyse automatisch, Status sichtbar', /Nicht überprüfbar/.test(card));
-    check('Academy: fehlendes Transkript wird angezeigt, nichts erfunden', /Kein Transkript verfügbar/.test(card) && (await page.evaluate(() => window.__bj.academy.claims.length)) === 0);
-    check('Academy: ohne Server keine Anfrage an YouTube oder andere Dienste', external.length === 0, external.join(','));
-    // Transkript einfügen -> Aussagen erkannt und mathematisch geprüft
-    await page.click('[data-action="transcript"]');
-    await page.fill('textarea[name="transcript"]', '0:05\nAlways split aces and eights.\n0:20 Stand on 12 against a 2.\n0:30 Never take insurance.');
-    await page.click('[data-action="sheet-save"]');
-    await page.waitForFunction(() => { const s = window.__bj.academy.sources[0]; return s && ['verified', 'partial'].includes(s.status); }, null, { timeout: 15000 });
-    check('Academy: eingefügtes Transkript analysiert und geprüft', /Erfolgreich geprüft/.test(await page.textContent('.academy-card')));
-    check('Academy: YouTube-Bibliothek ohne Überlauf', !(await overflow(page)));
-    await page.click('[data-action="tab"][data-tab="wissen"]');
-    const kb = await page.textContent('[data-slot="body"]');
-    check('Academy: Wissensbibliothek zeigt bestätigte und widerlegte Aussagen mit Quelle', /Mathematisch bestätigt/.test(kb) && /Mathematisch widerlegt/.test(kb) && /als fehlerhaft markiert/.test(kb) && /\(0:20\)/.test(kb));
-    await page.fill('input[name="q"]', 'versicherung');
-    check('Academy: Wissen durchsuchen', (await page.locator('.knowledge-card').count()) === 1);
-    check('Academy: Wissensbibliothek ohne Überlauf', !(await overflow(page)));
-    await page.click('[data-action="tab"][data-tab="statistik"]');
-    check('Academy: Lernstatistik aus echten Daten', /bestätigte Strategien/.test(await page.textContent('.stat-grid')) && (await page.textContent('.stat-grid')).includes('1'));
-    check('Academy: Lernstatistik ohne Überlauf', !(await overflow(page)));
-    await page.click('[data-action="tab"][data-tab="rechner"]');
-    await page.click('[data-action="calc"]');
-    await page.waitForSelector('.analysis-block', { timeout: 15000 });
-    const calc = await page.textContent('.analysis-block');
-    check('Strategie-Engine: beste Aktion mit Erwartungswerten und Deck-Vergleich (Decks unbekannt)', /Beste Aktion: Ziehen/.test(calc) && /Vergleich Deckanzahl/.test(calc) && /Annahme/.test(calc));
-    check('Strategie-Engine ohne Überlauf', !(await overflow(page)));
-    // Export / Zurücksetzen / Import
-    await page.click('[data-action="tab"][data-tab="daten"]');
-    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="export"]')]);
-    const exported = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
-    check('Academy: Export als Datei', exported.format === 'bjai-academy' && exported.sources.length === 1 && exported.claims.length === 4, `${exported.sources && exported.sources.length}/${exported.claims && exported.claims.length}`);
-    await page.click('[data-action="reset"]');
-    await page.click('[data-action="reset"]');
-    await page.waitForFunction(() => window.__bj.academy.sources.length === 0);
-    check('Academy: Zurücksetzen nur nach zweitem Tipp', true);
-    await page.setInputFiles('input[data-slot="file"]', { name: 'academy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
-    await page.waitForFunction(() => window.__bj.academy.claims.length === 4, null, { timeout: 5000 }).catch(() => {});
-    check('Academy: Import stellt die Daten wieder her', await page.evaluate(() => window.__bj.academy.claims.length === 4 && window.__bj.academy.sources.length === 1));
-    check('Academy: Daten & Server ohne Überlauf', !(await overflow(page)));
-    // Neustart: Daten bleiben
-    await page.reload();
-    await page.waitForSelector('.screen-main');
-    const keptA = await page.evaluate(async () => { await window.__bj.academy.ready(); return window.__bj.academy.claims.length; });
-    check('Academy: Wissen nach Neustart erhalten', keptA === 4, String(keptA));
-    // Offline: Academy und Strategie-Engine funktionieren ohne Netz
+    check('Ohne alte KI: keine Anfrage an andere Dienste', external.length === 0, external.join(','));
+    // Offline: App startet, Einstellungen und Strategieprofile funktionieren ohne Netz
     await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10000 }).catch(() => {});
     await ctx.setOffline(true);
     await page.reload();
     const offStart = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
-    await page.evaluate(() => window.__bj.navigate('akademie'));
-    await page.click('[data-action="tab"][data-tab="rechner"]');
-    await page.click('[data-action="calc"]');
-    const offCalc = await page.waitForSelector('.analysis-block', { timeout: 15000 }).then(() => true).catch(() => false);
-    check('Offline: App startet, Academy und Strategie-Engine rechnen ohne Netz', offStart && offCalc);
+    await page.evaluate(() => window.__bj.navigate('strategie'));
+    const offStrat = await page.waitForSelector('.profile-card', { timeout: 5000 }).then(() => true).catch(() => false);
+    check('Offline: App startet, Strategieprofile ohne Netz', offStart && offStrat);
     await ctx.setOffline(false);
-    // Kamera funktioniert weiterhin (Testkamera, iPad-Grösse) und „Erkennung melden“ speichert nur Kartenwerte
+    // Kamera funktioniert weiterhin (Testkamera, iPad-Grösse)
     await page.evaluate(() => window.__bj.navigate('kamera'));
     await page.click('[data-camera="start"]');
     await page.waitForFunction(() => window.__bj.camera.state === 'active', null, { timeout: 8000 });
     check('Phase 8: Kamera startet weiterhin (iPad-Grösse, Testkamera)', true);
-    const fb = await page.evaluate(async () => { const f = await window.__bj.academy.addFeedback({ kind: 'wrong-card', dealer: [{ rank: 'K', score: 0.7 }], hands: [] }); return Object.keys(f.dealer[0]).join(','); });
-    check('Kamera-Lernmodus: Meldung enthält nur Kartenwerte', fb === 'rank,score', fb);
     check('Phase 8: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 
-  // 14) Phase 8: Academy auf dem iPhone ohne Überlauf
-  {
-    const { ctx, page, errors } = await newPage(SIZES.iPhone);
+  // 14) 0.9.0: Daten aus 0.8.0 (YUMEKO aktiv, KI-Gedächtnis) -> Profil gesichert, KI-Gedächtnis erst sichern, dann löschen
+  for (const [label, size] of [['iPad quer', SIZES['iPad quer']], ['iPhone', SIZES.iPhone]]) {
+    const { ctx, page, errors } = await newPage(size);
     await page.goto(BASE);
     await page.waitForSelector('.screen-main');
+    // Stand von 0.8.0 nachbilden (gleiche Speicherorte wie die alte App)
+    await page.evaluate(async () => {
+      await window.__bj.archive.ready();
+      const AT = '2026-11-22T10:00:00Z';
+      const R = { decks: 6, soft17: 'steht', das: true, payout: '3:2' };
+      localStorage.setItem('bjassist.strategyProfiles', JSON.stringify({ version: 2, rev: 9, activeId: 'yumeko', invalid: [], profiles: [
+        { id: 'standard', name: 'Standardstrategie', type: 'standard', rules: R, settings: { followTableRules: true }, overrides: {}, data: {}, createdAt: AT, updatedAt: AT },
+        { id: 'yumeko', name: 'YUMEKO AI', description: 'Adaptive Blackjack Intelligence.', type: 'yumeko', rules: R, settings: { followTableRules: true }, overrides: { 'hard:16:10': 'S' }, data: { strategyVersion: 2, versionId: 'v2' }, createdAt: AT, updatedAt: AT }
+      ] }));
+      localStorage.setItem('bjassist.yumekoChat', JSON.stringify([{ from: 'user', text: 'Hallo' }]));
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('bjassist', 3); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const put = (store, v) => new Promise((res, rej) => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put(v); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+      await put('knowledge', { id: 'k1', category: 'verified', content: 'Hart 16 gegen 7: Ziehen' });
+      await put('versions', { id: 'v2', number: 2, status: 'aktiv', overrides: { 'hard:16:10': 'S' } });
+      await put('claims', { id: 'c1', text: 'Always split aces' });
+      await put('meta', { id: 'yumeko', dismissed: [] });
+      await put('meta', { id: 'bankroll', enabled: false, currency: 'CHF' });
+      await put('rounds', { id: 'r_alt', startedAt: AT, status: 'complete', rules: R, hands: [{ cards: [{ rank: '10' }, { rank: '9' }], actions: [], outcome: 'win' }], dealer: { cards: [{ rank: '10' }, { rank: '7' }], total: 17, final: true } });
+      db.close();
+    });
+    await page.reload();
+    await page.waitForSelector('.screen-main');
+    const prof = await page.evaluate(() => ({ active: window.__bj.profiles.active, ids: window.__bj.profiles.list().map((p) => p.id), backup: JSON.parse(localStorage.getItem('bjassist.legacy.yumekoProfile') || 'null') }));
+    check(`${label}: YUMEKO-Tabelle bleibt als normales aktives Profil (gleiche Empfehlung)`, prof.active.id === 'yumeko-gesichert' && prof.active.type === 'custom' && prof.active.overrides['hard:16:10'] === 'S' && !prof.ids.includes('yumeko'), JSON.stringify(prof.ids));
+    check(`${label}: Original-Profil gesichert`, prof.backup && prof.backup.profile.type === 'yumeko' && prof.backup.wasActive === true);
+    await page.evaluate(() => window.__bj.archive.ready());
+    check(`${label}: Spielarchiv aus 0.8.0 unverändert lesbar`, await page.evaluate(() => window.__bj.archive.rounds.length === 1));
     await page.evaluate(() => window.__bj.navigate('einstellungen'));
-    check('iPhone: Deckauswahl ohne Überlauf', !(await overflow(page)));
-    await page.evaluate(() => window.__bj.navigate('akademie'));
-    for (const t of ['videos', 'wissen', 'statistik', 'rechner', 'daten']) {
-      await page.click(`[data-action="tab"][data-tab="${t}"]`);
-      check(`iPhone Academy ${t}: ohne Überlauf`, !(await overflow(page)));
-    }
-    check('iPhone Academy: keine JavaScript-Fehler', errors.length === 0, errors.join(' | '));
+    await page.waitForSelector('[data-slot="legacy-ai"]');
+    const sec = await page.textContent('[data-slot="legacy-ai"]');
+    check(`${label}: Einstellungen zeigen altes KI-Gedächtnis mit Inhalt`, /1 Wissenseinträge/.test(sec) && /1 Strategieversionen/.test(sec) && /1 Academy-Aussagen/.test(sec), sec.replace(/\s+/g, ' ').slice(0, 160));
+    check(`${label}: Löschen vor der Sicherung gesperrt`, await page.isDisabled('[data-action="ai-clear-ask"]'));
+    check(`${label}: Einstellungen ohne Überlauf`, !(await overflow(page)));
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="ai-export"]')]);
+    const backup = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
+    check(`${label}: Sicherung als JSON-Datei mit allen alten KI-Daten`, backup.format === 'bjai-ki-gedaechtnis-sicherung' && backup.indexedDB.knowledge.length === 1 && backup.indexedDB.versions.length === 1 && backup.indexedDB.claims.length === 1 && backup.localStorage.yumekoChat.length === 1 && backup.localStorage['legacy.yumekoProfile'].profile.type === 'yumeko' && backup.indexedDB.meta.length === 1, dl.suggestedFilename());
+    await page.waitForSelector('[data-action="ai-clear-ask"]:not([disabled])');
+    await page.click('[data-action="ai-clear-ask"]');
+    await page.click('[data-action="ai-clear-do"]');
+    check(`${label}: ohne Bestätigung nichts gelöscht`, await page.evaluate(async () => (await window.__bj.legacyAi.refresh()).total) === 6);
+    await page.check('input[name="ai-clear-ok"]');
+    await page.click('[data-action="ai-clear-do"]');
+    await page.waitForFunction(() => window.__bj.legacyAi.empty, null, { timeout: 5000 }).catch(() => {});
+    const after = await page.evaluate(async () => {
+      const db = await new Promise((res) => { const r = indexedDB.open('bjassist', 3); r.onsuccess = () => res(r.result); });
+      const all = (s) => new Promise((res) => { const q = db.transaction(s).objectStore(s).getAll(); q.onsuccess = () => res(q.result); });
+      const out = { knowledge: (await all('knowledge')).length, claims: (await all('claims')).length, meta: (await all('meta')).map((m) => m.id), rounds: (await all('rounds')).length, chat: localStorage.getItem('bjassist.yumekoChat'), profiles: !!localStorage.getItem('bjassist.strategyProfiles') };
+      db.close();
+      return out;
+    });
+    check(`${label}: KI-Gedächtnis gelöscht, Archiv, Echtgeld-Einstellungen und Profile bleiben`, after.knowledge === 0 && after.claims === 0 && after.rounds === 1 && after.meta.join() === 'bankroll' && after.chat === null && after.profiles, JSON.stringify(after));
+    check(`${label}: Bestätigung angezeigt`, /wurde gelöscht/.test(await page.textContent('.sub-content')));
+    check(`${label}: nach dem Löschen ohne Überlauf`, !(await overflow(page)));
+    check(`${label}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 } catch (err) {

@@ -1,4 +1,4 @@
-// YUMEKO – Risikointelligenz.
+// Risikointelligenz.
 // Unabhängig von der Strategieintelligenz: Sie entscheidet NICHT über Ziehen/Stehen,
 // sondern prüft Budget, Limits, Verlustrisiko und ob gespielt werden sollte.
 // Eine Spielaktion ist nie eine Empfehlung, überhaupt Geld einzusetzen.
@@ -40,7 +40,7 @@ export function assessRisk({ config, stats, strategy = null, proposedStake = nul
   const negativeEv = !!strategy && typeof strategy.ev === 'number' && strategy.ev < 0;
 
   if (negativeEv) {
-    add('warn', 'negative-ev', `Unter diesen Tischregeln hat auch die mathematisch beste Strategie einen negativen Erwartungswert (${pctTxt(strategy.ev, 2)} pro Einsatz${strategy.label ? `, ${strategy.label}` : ''}). Langfristig ist mit Verlust zu rechnen. YUMEKO rät vom Spiel mit echtem Geld ab.`);
+    add('warn', 'negative-ev', `Unter diesen Tischregeln hat auch die mathematisch beste Strategie einen negativen Erwartungswert (${pctTxt(strategy.ev, 2)} pro Einsatz${strategy.label ? `, ${strategy.label}` : ''}). Langfristig ist mit Verlust zu rechnen. Die App rät vom Spiel mit echtem Geld ab.`);
   } else if (strategy && typeof strategy.ev === 'number') {
     add('info', 'ev', `Rechnerischer Erwartungswert ${pctTxt(strategy.ev, 2)} pro Einsatz. Auch ein positiver Wert garantiert keinen Gewinn – kurzfristig entscheidet der Zufall.`);
   }
@@ -128,7 +128,7 @@ export function assessRisk({ config, stats, strategy = null, proposedStake = nul
 export function stakeCheck({ stake, lastRound }) {
   if (!lastRound || !(stake > 0)) return null;
   if (lastRound.net < 0 && stake > lastRound.stake) {
-    return { tone: 'warn', code: 'raise-after-loss', text: 'Du erhöhst den Einsatz direkt nach einem Verlust. YUMEKO empfiehlt das nie: Verluste lassen sich so nicht verlässlich ausgleichen, das Risiko steigt.' };
+    return { tone: 'warn', code: 'raise-after-loss', text: 'Du erhöhst den Einsatz direkt nach einem Verlust. Die App empfiehlt das nie: Verluste lassen sich so nicht verlässlich ausgleichen, das Risiko steigt.' };
   }
   return null;
 }

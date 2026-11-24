@@ -1,4 +1,4 @@
-// Tests für Phase 6 (Version 0.6.0): YUMEKO, Spielarchiv, gemeinsames Dealer-Feld,
+// Tests für Phase 6 (Version 0.6.0): Spielarchiv, gemeinsames Dealer-Feld,
 // Entfernen von Aufgeben, Migration. Aufruf: npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,13 +11,9 @@ import { migrateCalibrationV1, REGION_DEFS, CALIBRATION_VERSION } from '../js/ca
 import { MemoryDatabase } from '../js/core/idb.js';
 import { ArchiveStore, EXPORT_FORMAT } from '../js/archive/archive-store.js';
 import { validateRound, filterRounds, summarizeRounds, roundOutcome } from '../js/archive/round-record.js';
-import { KnowledgeStore, STATUS } from '../js/yumeko/knowledge.js';
-import { analyzeArchive, decisionEVs } from '../js/yumeko/archive-analysis.js';
-import { Yumeko, buildDraft, verifyVersion, checkShownDecision } from '../js/yumeko/yumeko.js';
-import { SceneDetector } from '../js/yumeko/video-learner.js';
 import { decide, ACTIONS } from '../js/strategy/engine.js';
 import { DEFAULT_RULES, standardTable, CODES, CODES_BY_KIND, normalizeRules, rulesText } from '../js/strategy/standard.js';
-import { ProfileStore, migrate, STANDARD_ID, YUMEKO_ID, PROFILES_KEY } from '../js/strategy/profiles.js';
+import { ProfileStore, migrate, STANDARD_ID, PROFILES_KEY } from '../js/strategy/profiles.js';
 import { Emitter } from '../js/core/events.js';
 import { RECOMMENDATIONS } from '../js/demo/scenarios.js';
 
@@ -268,7 +264,6 @@ test('Aufgeben ist aus der aktiven Logik entfernt, alte Daten bleiben lesbar', (
   assert.ok(old);
   assert.equal(old.hands[0].actions[0].action, 'SURRENDER');
   assert.equal(summarizeRounds([old]).loss, 1);
-  assert.equal(analyzeArchive([old]).decisionsUsed, 0, 'Aufgeben wird nicht als Entscheidung ausgewertet');
 });
 
 // --- 12. Migration ------------------------------------------------------------
@@ -287,7 +282,7 @@ test('Migration: Kalibrierung mit zwei Dealer-Feldern -> ein Dealer-Feld', () =>
   assert.equal(migrateCalibrationV1({ version: 1, frame: {}, regions: {} }), null);
 });
 
-test('Migration: Strategieprofile aus 0.5.0 (Aufgeben-Codes, YUMEKO ergänzt)', () => {
+test('Migration: Strategieprofile aus 0.5.0 (Aufgeben-Codes)', () => {
   const raw = {
     version: 1, rev: 4, activeId: 'p_mine',
     profiles: [
@@ -303,138 +298,12 @@ test('Migration: Strategieprofile aus 0.5.0 (Aufgeben-Codes, YUMEKO ergänzt)', 
   assert.deepEqual(mine.overrides, { 'hard:16:10': 'H', 'pair:8:11': 'P', 'hard:12:3': 'S' });
   assert.deepEqual(mine.data.legacySurrender, { 'hard:16:10': 'Rh', 'pair:8:11': 'Rp' });
   assert.ok(!('surrender' in mine.rules));
-  assert.deepEqual(m.profiles.map((p) => p.id).slice(0, 2), [STANDARD_ID, YUMEKO_ID]);
+  assert.equal(m.profiles[0].id, STANDARD_ID);
+  assert.ok(!m.profiles.some((p) => p.type === 'yumeko'), 'seit 0.9.0 kein YUMEKO-Profil mehr');
   // Gespeichert wird Version 2, Speichern erhält alles
   const storage = memoryStorage({ [PROFILES_KEY]: raw });
   const s = new ProfileStore({ settings: new FakeSettings(), storage });
   assert.equal(storage.data[PROFILES_KEY].version, 2);
-  assert.equal(s.list().length, 3);
+  assert.equal(s.list().length, 2);
   assert.equal(s.active.id, 'p_mine');
-});
-
-// --- 1./2. Yumeko-Profil, genau ein aktives Profil ---------------------------
-test('YUMEKO-Profil: vorhanden, aktivierbar, nicht löschbar, genau ein aktives Profil', () => {
-  const s = new ProfileStore({ settings: new FakeSettings(), storage: memoryStorage() });
-  const y = s.get(YUMEKO_ID);
-  assert.equal(y.name, 'YUMEKO AI');
-  assert.equal(y.description, 'Adaptive Blackjack Intelligence.');
-  assert.equal(y.type, 'yumeko');
-  s.activate(YUMEKO_ID);
-  assert.equal(s.activeId, YUMEKO_ID);
-  assert.equal(s.list().filter((p) => p.id === s.activeId).length, 1);
-  const own = s.create({ name: 'Eigenes' });
-  s.activate(own.id);
-  assert.equal(s.activeId, own.id);
-  assert.throws(() => s.remove(YUMEKO_ID), /nicht gelöscht/);
-  assert.throws(() => s.setCell(YUMEKO_ID, 'hard:16:10', 'S'), /Strategieversionen/);
-  assert.throws(() => s.applyYumekoVersion({ id: 'v', number: 1, overrides: {} }), /nicht mathematisch geprüft/);
-  // Duplikat ist frei bearbeitbar
-  const copy = s.duplicate(YUMEKO_ID);
-  assert.equal(copy.type, 'custom');
-});
-
-// --- 7. Lerninformationen dauerhaft speichern ------------------------------
-test('YUMEKO: Wissensspeicher bleibt erhalten, Korrigieren und Löschen', async () => {
-  const storage = memoryStorage();
-  const k1 = new KnowledgeStore({ db: new MemoryDatabase({ persist: storage }) });
-  await k1.ready();
-  await k1.upsert({ id: 'a:exp:test', category: 'experience', content: 'Test', status: STATUS.observed, auto: true }, { fromAnalysis: true });
-  await k1.upsert({ id: 'u:1', category: 'hypothesis', content: 'Meine Vermutung', status: STATUS.unconfirmed });
-  await k1.correct('u:1', { content: 'Korrigierte Vermutung', status: STATUS.rejected });
-  // App "neu öffnen"
-  const k2 = new KnowledgeStore({ db: new MemoryDatabase({ persist: storage }) });
-  await k2.ready();
-  assert.equal(k2.items.length, 2);
-  assert.equal(k2.get('u:1').content, 'Korrigierte Vermutung');
-  assert.equal(k2.get('u:1').edited, true);
-  // Gelöschte automatische Erkenntnis kommt bei neuer Analyse nicht zurück
-  await k2.remove('a:exp:test');
-  assert.equal(await k2.upsert({ id: 'a:exp:test', category: 'experience', content: 'Test', auto: true }, { fromAnalysis: true }), null);
-  // Korrigierte Erkenntnis wird nicht überschrieben
-  await k2.upsert({ id: 'u:1', category: 'hypothesis', content: 'Automatisch', auto: true }, { fromAnalysis: true });
-  assert.equal(k2.get('u:1').content, 'Korrigierte Vermutung');
-});
-
-test('YUMEKO-Analyse: Entscheidungsqualität unabhängig vom Ergebnis, reproduzierbar', () => {
-  // 16 gegen 7: gestanden und GEWONNEN -> trotzdem rechnerisch schlechter als Ziehen
-  const rounds = [
-    makeRound('r_1', { player: ['10', '6'], dealer: ['7', '5', 'K'] }),      // stehen, Dealer überkauft -> gewonnen
-    makeRound('r_2', { player: ['10', '6'], dealer: ['7', '10'] }),          // stehen, verloren
-    makeRound('r_3', { player: ['10', '6', '4'], dealer: ['7', '10'] })      // gezogen, 20 gegen 17 -> gewonnen
-  ];
-  const rep = analyzeArchive(rounds, { generatedAt: 'fest' });
-  const rep2 = analyzeArchive([...rounds].reverse(), { generatedAt: 'fest' });
-  assert.deepEqual(rep, rep2, 'gleiche Daten -> gleiches Ergebnis');
-  assert.equal(rep.roundsUsed, 3);
-  const m = rep.mistakes.find((x) => x.key === 'hard:16:7' && x.action === 'STAND');
-  assert.ok(m, 'Stehen bei 16 gegen 7 als Fehler erkannt');
-  assert.equal(m.count, 2);
-  assert.equal(m.best, 'HIT');
-  assert.equal(rep.luck.wrongWon, 1, 'falsche Entscheidung trotzdem gewonnen');
-  assert.ok(rep.inconsistent.some((x) => x.situation.endsWith('hard:16:7')), 'unterschiedliche Entscheidungen in gleicher Lage');
-  assert.equal(rep.quality.level, 'niedrig', 'wenige Daten = niedrige Verlässlichkeit');
-  assert.ok(rep.outcomes.note.includes('Zufall'));
-  const d = decisionEVs(['10', '6'], '10', R);
-  assert.ok(d.evs.HIT > d.evs.STAND);
-  // 16 gegen 10 ist knapp (unter 0,1 %) und gilt nicht als Fehler
-  assert.ok(d.evs.HIT - d.evs.STAND < 0.001);
-});
-
-test('YUMEKO: Strategieentwurf, mathematische Prüfung und Bestätigung', async () => {
-  const settings = new FakeSettings();
-  const profiles = new ProfileStore({ settings, storage: memoryStorage() });
-  const db = new MemoryDatabase();
-  const archive = new ArchiveStore({ db });
-  const knowledge = new KnowledgeStore({ db });
-  const y = new Yumeko({ archive, knowledge, profiles, settings });
-  await archive.add(makeRound('r_1', { player: ['10', '6'], dealer: ['7', '5', '8'] }));
-  const rep = await y.analyzeArchive();
-  assert.equal(rep.roundsUsed, 1);
-  assert.ok(knowledge.byCategory('verified').some((i) => i.id.includes('hard:16:7')));
-  assert.equal(y.status().fresh, 0);
-  // Bestätigte Lerninformation, die die Prüfung NICHT besteht, wird nicht übernommen
-  await knowledge.upsert({ id: 'u:bad', category: 'hypothesis', content: '16 gegen 10 immer stehen', status: STATUS.userConfirmed, data: { cell: { key: 'hard:12:2', code: 'D' } } });
-  const draft = await y.draft();
-  assert.equal(draft.status, 'entwurf');
-  assert.ok(draft.basis.rejected.some((x) => x.id === 'u:bad'));
-  await assert.rejects(y.confirm(draft.id), /Prüfung/);
-  const checked = await y.verify(draft.id);
-  assert.equal(checked.verification.ok, true, checked.verification.problems.join('; '));
-  assert.ok(checked.verification.evVersion >= checked.verification.evStandard - 1e-12);
-  const active = await y.confirm(draft.id);
-  assert.equal(active.status, 'aktiv');
-  assert.equal(profiles.get(YUMEKO_ID).data.strategyVersion, 1);
-  assert.deepEqual(profiles.get(YUMEKO_ID).overrides, draft.overrides);
-  // Version mit schlechter Zelle wird abgelehnt
-  const bad = verifyVersion({ rules: R, overrides: { 'hard:16:10': 'S' } });
-  assert.equal(bad.ok, false);
-  assert.ok(buildDraft({ rules: R, number: 9 }).basis.method.includes('Rechenmodell'));
-  // Erkennungskorrekturen -> zusätzliche Prüfungen für diesen Kartenwert
-  await archive.update('r_1', (rec) => { rec.dealer.cards[2].rank = '7'; }, 'Karte', [{ from: '8', to: '7' }]);
-  await archive.update('r_1', (rec) => { rec.dealer.cards[2].rank = '8'; }, 'Karte', [{ from: '7', to: '8' }]);
-  await archive.update('r_1', (rec) => { rec.dealer.cards[2].rank = '7'; }, 'Karte', [{ from: '8', to: '7' }]);
-  await archive.update('r_1', (rec) => { rec.dealer.cards[2].rank = '8'; }, 'Karte', [{ from: '8', to: '7' }]);
-  await y.analyzeArchive();
-  assert.equal(y.confirmFor('8'), 1);
-  assert.equal(y.confirmFor('5'), 0);
-});
-
-// --- Video-Lernen ---------------------------------------------------------------
-test('Video-Lernen: Szenenwechsel mit Zeitstempeln, unsichere Erkennungen markiert', () => {
-  const sd = new SceneDetector({ stableFrames: 2 });
-  const f = (t, cards) => sd.push(cards, t);
-  f(0, [det('10', 0.3, 0.7), det('6', 0.35, 0.7), det('10', 0.4, 0.2)]);
-  f(0.5, [det('10', 0.3, 0.7), det('6', 0.35, 0.7), det('10', 0.4, 0.2)]);
-  f(1.0, [det('10', 0.3, 0.7), det('6', 0.35, 0.7), det('10', 0.4, 0.2)]);
-  f(1.5, [det('10', 0.3, 0.7), det('6', 0.35, 0.7), det('10', 0.4, 0.2), det('5', 0.4, 0.7, 0.7)]);
-  f(2.0, [det('10', 0.3, 0.7), det('6', 0.35, 0.7), det('10', 0.4, 0.2), det('5', 0.4, 0.7, 0.7)]);
-  const scenes = sd.finish(2.5);
-  assert.equal(scenes.length, 2);
-  assert.equal(scenes[0].t0, 0);
-  assert.equal(scenes[1].t0, 1.5);
-  assert.equal(scenes[0].cards.find((c) => c.y < 0.5).role, 'dealer', 'obere Bildhälfte = Dealer (änderbar)');
-  assert.equal(scenes[1].cards.filter((c) => c.unsure).length, 1, 'unsichere Karte markiert');
-  const chk = checkShownDecision(['10', '6'], '7', 'STAND', R);
-  assert.equal(chk.agrees, false);
-  assert.equal(checkShownDecision(['10', '6'], '7', 'HIT', R).agrees, true);
 });

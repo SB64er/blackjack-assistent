@@ -1,4 +1,4 @@
-// Lokale Datenbank für grössere Datenmengen (Spielarchiv, YUMEKO-Wissen).
+// Lokale Datenbank für grössere Datenmengen (Spielarchiv, Simulationen, Echtgeld-Protokoll).
 // Bevorzugt IndexedDB. Ist IndexedDB nicht verfügbar (z. B. privates Fenster),
 // wird auf localStorage ausgewichen – mit Hinweis, dass dort weniger Platz ist.
 // Alle Daten bleiben auf dem Gerät.
@@ -10,6 +10,10 @@ export const DB_NAME = 'bjassist';
 // Version 3 (0.8.0, Yumeko Academy): neue Bereiche "sources" (Lernquellen, z. B. YouTube-Videos
 // mit Analysestatus), "claims" (erkannte Strategie-Aussagen mit Prüfergebnis) und
 // "feedback" (gemeldete Fehlerkennungen der Kamera). Vorhandene Bereiche bleiben unverändert.
+// 0.9.0: Die frühere YUMEKO-KI und die Academy sind entfernt. Ihre Bereiche (knowledge, videos,
+// versions, history, sources, claims, feedback) bleiben trotzdem bestehen: Sie enthalten das
+// alte KI-Gedächtnis, das erst nach einer Sicherung gelöscht wird (js/core/legacy-ai.js).
+// Bereiche werden nie entfernt, damit keine Daten verloren gehen.
 export const DB_VERSION = 3;
 export const STORES = ['rounds', 'knowledge', 'videos', 'versions', 'meta', 'simulations', 'ledger', 'history', 'sources', 'claims', 'feedback'];
 // Datenbank-Versionen und was beim Wechsel passiert (für die Dokumentation und Tests).

@@ -58,15 +58,13 @@ export class ArchiveView extends View {
     try {
       const data = JSON.parse(await file.text());
       const res = await this.ctx.archive.importData(data);
-      let extra = 0;
       let money = 0;
       let sims = 0;
-      if (data.yumeko) extra = await this.ctx.knowledge.importData(data.yumeko);
       if (data.bankroll && this.ctx.bankroll) money = await this.ctx.bankroll.importData(data.bankroll);
       if (data.simulations && this.ctx.simulations) sims = await this.ctx.simulations.importData(data.simulations);
-      let acad = null;
-      if (data.academy && this.ctx.academy) acad = await this.ctx.academy.importData(data.academy);
-      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${extra ? `, ${extra} YUMEKO-Einträge` : ''}${money ? `, ${money} Echtgeld-Einträge` : ''}${sims ? `, ${sims} Simulationen` : ''}${acad && acad.added ? `, ${acad.added} Academy-Einträge` : ''}.` };
+      // 0.9.0: Daten der früheren YUMEKO-KI/Academy werden nicht mehr eingelesen (sie bleiben in der Datei).
+      const oldAi = data.yumeko || data.academy ? ' Enthaltene Daten der früheren YUMEKO-KI und Academy wurden nicht übernommen; sie bleiben in der Datei erhalten.' : '';
+      this._notice = { tone: 'ok', text: `Import: ${res.added} Runden hinzugefügt, ${res.skipped} bereits vorhanden (nicht überschrieben), ${res.invalid} ungültig${money ? `, ${money} Echtgeld-Einträge` : ''}${sims ? `, ${sims} Simulationen` : ''}.${oldAi}` };
     } catch (err) {
       this._notice = { tone: 'warn', text: `Import fehlgeschlagen: ${err.message}` };
     }
@@ -77,20 +75,18 @@ export class ArchiveView extends View {
   async _onClick(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn || btn.disabled) return;
-    const { archive, knowledge, ui, navigate } = this.ctx;
+    const { archive, ui, navigate } = this.ctx;
     switch (btn.dataset.action) {
       case 'filter': this._filter = btn.dataset.f; this._limit = PAGE; this.render(); break;
       case 'open': ui.set('openRoundId', btn.dataset.id); navigate('runde'); break;
       case 'more': this._limit += PAGE; this._renderList(); break;
       case 'export': {
         const data = await archive.exportData({
-          yumeko: knowledge.exportData(),
           ...(this.ctx.bankroll ? { bankroll: this.ctx.bankroll.exportData() } : {}),
-          ...(this.ctx.simulations ? { simulations: this.ctx.simulations.exportData() } : {}),
-          ...(this.ctx.academy ? { academy: this.ctx.academy.exportData() } : {})
+          ...(this.ctx.simulations ? { simulations: this.ctx.simulations.exportData() } : {})
         });
         downloadJson(`bjai-sicherung-${new Date().toISOString().slice(0, 10)}.json`, data);
-        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden, YUMEKO-Wissen, Echtgeld-Protokoll, Simulationen und Academy erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“) – sie enthält Geldbeträge.` };
+        this._notice = { tone: 'ok', text: `Sicherung mit ${data.rounds.length} Runden, Echtgeld-Protokoll und Simulationen erstellt. Bewahre die Datei sicher auf (z. B. in „Dateien“) – sie enthält Geldbeträge.` };
         this.render();
         break;
       }
@@ -102,7 +98,7 @@ export class ArchiveView extends View {
         if (!ok || !ok.checked) { this._notice = { tone: 'warn', text: 'Bitte zuerst bestätigen, dass alle Runden gelöscht werden sollen.' }; this.render(); break; }
         await archive.clearAll({ confirmed: true });
         this._confirmClear = false;
-        this._notice = { tone: 'ok', text: 'Das Spielarchiv wurde gelöscht. YUMEKOS Wissen bleibt erhalten.' };
+        this._notice = { tone: 'ok', text: 'Das Spielarchiv wurde gelöscht.' };
         this.render();
         break;
       }
@@ -136,7 +132,7 @@ export class ArchiveView extends View {
         <h2 class="group-title">SICHERUNG</h2>
         <p class="group-help">Alle Daten bleiben auf diesem Gerät. Safari kann Website-Daten löschen (z. B. „Verlauf löschen“ oder lange Nichtbenutzung im Browser-Tab). Exportiere deshalb regelmässig eine Sicherung.</p>
         <div class="btn-row">
-          <button type="button" class="btn btn--secondary" data-action="export" ${archive.rounds.length || this.ctx.knowledge.items.length ? '' : 'disabled'}>Als JSON exportieren</button>
+          <button type="button" class="btn btn--secondary" data-action="export" ${archive.rounds.length ? '' : 'disabled'}>Als JSON exportieren</button>
           <button type="button" class="btn btn--secondary" data-action="import">Sicherung importieren</button>
         </div>
         <p class="hint">Beim Import werden vorhandene Runden nie überschrieben.</p>

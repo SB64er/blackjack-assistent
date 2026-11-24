@@ -3,6 +3,8 @@ import { View, subHeader, cameraStatus } from './view-base.js';
 import { ICONS, esc } from '../core/dom.js';
 import { APP_VERSION } from '../core/version.js';
 import { RecognitionReason } from '../recognition/recognition-service.js';
+import { downloadJson, fmtDateTime } from './archive-view.js';
+import { STORE_LABEL, LEGACY_STORES } from '../core/legacy-ai.js';
 import { DECK_CHOICES, deckChoice, deckChoicePatch, deckChoiceText, ruleKnowledge } from '../strategy/table-rules.js';
 
 const BLOCKER_TEXT = {
@@ -36,7 +38,9 @@ export class SettingsView extends View {
     this.listen(this.ctx.updates, 'change', () => this.render());
     this.listen(this.ctx.profiles, 'change', () => this.render());
     if (this.ctx.archive) this.listen(this.ctx.archive, 'change', () => this.render());
-    if (this.ctx.academy) this.listen(this.ctx.academy, 'change', () => this.render());
+    if (this.ctx.legacyAi) this.listen(this.ctx.legacyAi, 'change', () => this.render());
+    if (this.ctx.bankroll) this.listen(this.ctx.bankroll, 'change', () => this.render());
+    if (this.ctx.simulations) this.listen(this.ctx.simulations, 'change', () => this.render());
     this.listen(this.ctx.display, 'change', () => this.render());
     this.render();
   }
@@ -46,11 +50,72 @@ export class SettingsView extends View {
     clearTimeout(this._revokeTimer);
   }
 
+  // Früheres KI-Gedächtnis: erst sichern, danach (optional) löschen.
+  async _onLegacyAi(a) {
+    const mem = this.ctx.legacyAi;
+    if (!mem) return;
+    try {
+      if (a === 'ai-export') {
+        const data = await mem.exportData();
+        downloadJson(`bjai-ki-gedaechtnis-${data.exportedAt.slice(0, 10)}.json`, data);
+        mem.markExported(data);
+        this._aiNotice = { tone: 'ok', text: 'Sicherung des alten KI-Gedächtnisses heruntergeladen. Bewahre die Datei auf (z. B. in „Dateien“), bevor du löschst.' };
+      } else if (a === 'ai-clear-ask') {
+        this._aiConfirm = true;
+      } else if (a === 'ai-clear-cancel') {
+        this._aiConfirm = false;
+      } else if (a === 'ai-clear-do') {
+        const ok = this.el.querySelector('input[name="ai-clear-ok"]');
+        if (!ok || !ok.checked) { this._aiNotice = { tone: 'warn', text: 'Bitte zuerst bestätigen, dass die Sicherungsdatei gespeichert ist.' }; this.render(); return; }
+        await mem.clear({ confirmed: true });
+        this._aiConfirm = false;
+        this._aiNotice = { tone: 'ok', text: 'Das alte KI-Gedächtnis wurde gelöscht. Spielarchiv, Profile, Echtgeld-Protokoll, Simulationen und alle übrigen Daten sind unverändert.' };
+      }
+    } catch (err) {
+      this._aiNotice = { tone: 'warn', text: err.message };
+    }
+    this.render();
+  }
+
+  _legacyAiHtml() {
+    const mem = this.ctx.legacyAi;
+    if (!mem || (!mem.error && mem.empty && !this._aiNotice)) return '';
+    const s = mem.summary;
+    const b = mem.lastBackup;
+    const notice = this._aiNotice ? `<p class="notice notice--${this._aiNotice.tone}" role="status">${this._aiNotice.tone === 'ok' ? ICONS.check : ICONS.warning}<span>${esc(this._aiNotice.text)}</span></p>` : '';
+    if (mem.error) return `<section class="group"><h2 class="group-title">ALTES KI-GEDÄCHTNIS</h2><p class="notice notice--warn">${ICONS.warning}<span>${esc(mem.error)}</span></p></section>`;
+    if (mem.empty) return `<section class="group" data-slot="legacy-ai"><h2 class="group-title">ALTES KI-GEDÄCHTNIS</h2>${notice}</section>`;
+    const parts = LEGACY_STORES.filter((k) => s.counts[k]).map((k) => `${s.counts[k]} ${STORE_LABEL[k]}`);
+    if (s.meta) parts.push('Lernstatus');
+    if (s.local) parts.push(`${s.local} weitere Einstellungen (Chat-Verlauf, Profil, Server-Adresse)`);
+    return `
+        <section class="group" data-slot="legacy-ai">
+          <h2 class="group-title">ALTES KI-GEDÄCHTNIS</h2>
+          <p class="group-help">Die frühere YUMEKO AI, ihr Lernzentrum und die Academy wurden entfernt. Ihre gespeicherten Daten sind noch auf diesem Gerät: ${esc(parts.join(', '))}. Sie werden nicht mehr verwendet und erst gelöscht, wenn du es nach einer Sicherung ausdrücklich bestätigst.</p>
+          ${notice}
+          <div class="btn-row">
+            <button type="button" class="btn btn--secondary" data-action="ai-export">Sicherung herunterladen (JSON)</button>
+          </div>
+          <p class="hint">${b ? `Zuletzt gesichert: ${esc(fmtDateTime(b.at))}${mem.backedUp ? ' (aktueller Stand).' : ' – seither geändert, bitte neu sichern.'}` : 'Noch keine Sicherung erstellt.'}</p>
+          ${this._aiConfirm ? `
+            <div class="danger-box">
+              <p><b>Altes KI-Gedächtnis endgültig löschen?</b> Nur die Daten der früheren KI werden gelöscht. Spielarchiv, Profile, Echtgeld, Simulationen, Kalibrierung und angelernte Karten bleiben.</p>
+              <label class="row row--check"><span>Ja, die Sicherungsdatei ist gespeichert.</span><input type="checkbox" name="ai-clear-ok"></label>
+              <div class="btn-row">
+                <button type="button" class="btn btn--danger" data-action="ai-clear-do">Endgültig löschen</button>
+                <button type="button" class="btn btn--ghost" data-action="ai-clear-cancel">Abbrechen</button>
+              </div>
+            </div>`
+            : `<button type="button" class="btn btn--ghost" data-action="ai-clear-ask" ${mem.backedUp ? '' : 'disabled'}>Altes KI-Gedächtnis löschen …</button>`}
+        </section>`;
+  }
+
   _onClick(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { settings, camera } = this.ctx;
     const a = btn.dataset.action;
+    if (a.startsWith('ai-')) { this._onLegacyAi(a); return; }
     if (a === 'mode-auto') settings.set('roundMode', 'automatisch');
     else if (a === 'mode-manual') settings.set('roundMode', 'manuell');
     else if (a === 'speech') settings.set('speech', !settings.get('speech'));
@@ -207,15 +272,15 @@ export class SettingsView extends View {
         </section>
 
         <section class="group">
-          <h2 class="group-title">YUMEKO AI</h2>
+          <h2 class="group-title">STRATEGIE &amp; RISIKO</h2>
           <div class="list">
-            <button type="button" class="row row--link" data-nav="yumeko">
-              <span class="row-stack"><span>◆ Lernzentrum</span><small>Lernstatus, Archiv analysieren, Video lernen, Wissen, Strategieversionen</small></span>
-              <span class="row-value">${this.ctx.profiles.activeId === 'yumeko' ? '<span class="type-badge type-badge--yumeko">aktiv</span>' : ''} ${ICONS.chevron}</span>
+            <button type="button" class="row row--link" data-nav="labor">
+              <span class="row-stack"><span>Strategie-Labor</span><small>Profile unter gleichen Bedingungen simulieren und vergleichen</small></span>
+              <span class="row-value">${esc(this.ctx.simulations ? this.ctx.simulations.list.length : 0)} gespeichert ${ICONS.chevron}</span>
             </button>
-            <button type="button" class="row row--link" data-nav="akademie">
-              <span class="row-stack"><span>◆ Yumeko Academy</span><small>YouTube-Links analysieren, Wissensbibliothek, Lernstatistik, Strategie-Engine</small></span>
-              <span class="row-value">${this.ctx.academy ? esc(this.ctx.academy.sources.length) : 0} Videos ${ICONS.chevron}</span>
+            <button type="button" class="row row--link" data-nav="risiko">
+              <span class="row-stack"><span>Echtgeld &amp; Risiko</span><small>Optional: Budget, Limits, Protokoll, Risikoanalyse</small></span>
+              <span class="row-value">${this.ctx.bankroll && this.ctx.bankroll.config && this.ctx.bankroll.config.enabled ? 'aktiv' : 'aus'} ${ICONS.chevron}</span>
             </button>
           </div>
         </section>
@@ -259,6 +324,8 @@ export class SettingsView extends View {
             <button type="button" class="row row--link" data-nav="test"><span>Testmodus Kamera &amp; Kalibrierung</span><span class="row-value">${ICONS.chevron}</span></button>
           </div>
         </section>
+
+        ${this._legacyAiHtml()}
 
         ${this._appHtml()}
 

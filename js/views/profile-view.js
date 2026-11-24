@@ -61,7 +61,7 @@ export class ProfileView extends View {
 
   get editable() {
     const p = this.profile;
-    return p && p.type !== 'standard' && p.type !== 'yumeko' && !this.ctx.profiles.readOnly;
+    return p && p.type !== 'standard' && !this.ctx.profiles.readOnly;
   }
 
   _strategyRules(p) {
@@ -289,17 +289,6 @@ export class ProfileView extends View {
           </div>
         </section>`;
     }
-    if (p.type === 'yumeko') {
-      return `
-        <section class="group">
-          <h2 class="group-title">YUMEKO: HERKUNFT</h2>
-          <div class="source-box source-box--yumeko">
-            <strong>Strategieversion ${esc(String(p.data.strategyVersion || 0))}</strong>
-            <p>${p.data.strategyVersion ? 'Diese Tabelle wurde im Lernzentrum mathematisch geprüft und von dir bestätigt.' : 'Noch keine eigene Version aktiviert – YUMEKO nutzt die Standardstrategie.'}</p>
-            <button type="button" class="btn btn--yumeko" data-nav="yumeko">Zum Lernzentrum</button>
-          </div>
-        </section>`;
-    }
     if (p.type !== 'ai') return '';
     const d = p.data || {};
     const res = d.research || { status: 'skipped' };
@@ -351,7 +340,7 @@ export class ProfileView extends View {
       : `<p class="profile-card-desc">${esc(p.description)}</p>
          <button type="button" class="btn btn--secondary" data-action="duplicate">Duplizieren, um eine eigene Version zu bearbeiten</button>`;
 
-    const rulesBox = p.type === 'standard' || p.type === 'yumeko'
+    const rulesBox = p.type === 'standard'
       ? `<p class="hint">Folgt immer den Tischregeln: ${esc(rulesText(this._tableRules()))}</p>`
       : `
         <div class="list">

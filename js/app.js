@@ -20,21 +20,14 @@ import { ProfileView } from './views/profile-view.js';
 import { Emitter } from './core/events.js';
 import { sharedDatabase } from './core/idb.js';
 import { ArchiveStore } from './archive/archive-store.js';
-import { KnowledgeStore } from './yumeko/knowledge.js';
-import { Yumeko } from './yumeko/yumeko.js';
 import { decide } from './strategy/engine.js';
 import { ArchiveView } from './views/archive-view.js';
 import { RoundView } from './views/round-view.js';
-import { YumekoView } from './views/yumeko-view.js';
-import { KnowledgeView } from './views/knowledge-view.js';
-import { VideoView } from './views/video-view.js';
 import { BankrollStore } from './risk/bankroll.js';
-import { SimulationStore } from './yumeko/sim-store.js';
+import { SimulationStore } from './strategy/sim-store.js';
 import { LabView } from './views/lab-view.js';
 import { RiskView } from './views/risk-view.js';
-import { ChatView } from './views/chat-view.js';
-import { AcademyStore } from './academy/academy-store.js';
-import { AcademyView } from './views/academy-view.js';
+import { LegacyAiMemory } from './core/legacy-ai.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -47,21 +40,21 @@ const test = new TestTracker({ camera, calibration });
 const profiles = new ProfileStore({ settings });
 // Zustand zwischen Ansichten (ohne URL-Änderung)
 class UiState extends Emitter {
-  constructor() { super(); this.editProfileId = null; this.openRoundId = null; this.pendingRound = null; this.knowledgeFilter = null; this.lastSituation = null; }
+  constructor() { super(); this.editProfileId = null; this.openRoundId = null; this.pendingRound = null; }
   set(key, value) { this[key] = value; this.emit('change', { key }); }
 }
 const ui = new UiState();
 
-// Spielarchiv und YUMEKO (lokal, IndexedDB)
+// Spielarchiv (lokal, IndexedDB)
 const db = sharedDatabase();
 const archive = new ArchiveStore({ db });
-const knowledge = new KnowledgeStore({ db });
-const yumeko = new Yumeko({ archive, knowledge, profiles, settings });
 // Echtgeld & Risiko (optional) und Simulationen – getrennt von echten Runden gespeichert.
 const bankroll = new BankrollStore({ db });
 const simulations = new SimulationStore({ db });
-// Yumeko Academy (0.8.0): YouTube-Lernsystem und Wissensdatenbank – lokal in IndexedDB.
-const academy = new AcademyStore({ db, knowledge, settings });
+// 0.9.0: Die frühere YUMEKO-KI, ihr Lernzentrum und die Academy sind entfernt.
+// Ihr gespeichertes KI-Gedächtnis bleibt unangetastet, bis es in den Einstellungen
+// gesichert und danach ausdrücklich gelöscht wird.
+const legacyAi = new LegacyAiMemory({ db });
 
 // Empfehlung des aktiven Profils für die Rundenprotokolle.
 recognition.advise = (cards, up, afterSplit) => {
@@ -69,8 +62,6 @@ recognition.advise = (cards, up, afterSplit) => {
   const d = decide(cards, up, { rules: settings.get('rules'), strategyRules: st.strategyRules, overrides: st.overrides, afterSplit });
   return d.action ? d : null;
 };
-// Von YUMEKO gelernt: oft korrigierte Kartenwerte zusätzlich prüfen.
-recognition.confirmFor = (rank) => yumeko.confirmFor(rank);
 
 // Abgeschlossene Runden automatisch archivieren (nur Kartenwerte, keine Bilder).
 recognition.on('round-end', ({ round }) => {
@@ -78,16 +69,14 @@ recognition.on('round-end', ({ round }) => {
   const p = profiles.active;
   const record = round.toRecord({
     rules: settings.get('rules'),
-    profile: { id: p.id, name: p.name, type: p.type, ...(p.type === 'yumeko' ? { version: p.data.strategyVersion || 0 } : {}) }
+    profile: { id: p.id, name: p.name, type: p.type }
   });
-  // 0.8.0: Wurde in dieser Runde eine Fehlerkennung gemeldet, wird die Runde markiert.
-  if (academy.feedback.some((f) => f.roundId === record.id)) record.recognition = { ...(record.recognition || {}), reported: true };
   archive.add(record).then((saved) => {
     if (saved.status === 'incomplete') ui.set('pendingRound', saved.id);
   }).catch((err) => console.warn('[archiv] Runde nicht gespeichert', err));
 });
 
-const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, knowledge, yumeko, bankroll, simulations, academy };
+const ctx = { settings, camera, calibration, templates, recognition, test, display, updates, profiles, ui, navigate, archive, bankroll, simulations, legacyAi };
 
 const ROUTES = {
   haupt: MainView,
@@ -99,13 +88,8 @@ const ROUTES = {
   profil: ProfileView,
   archiv: ArchiveView,
   runde: RoundView,
-  yumeko: YumekoView,
-  wissen: KnowledgeView,
-  video: VideoView,
   labor: LabView,
-  risiko: RiskView,
-  chat: ChatView,
-  akademie: AcademyView
+  risiko: RiskView
 };
 
 const root = document.getElementById('app');

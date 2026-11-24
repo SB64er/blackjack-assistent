@@ -1,1 +1,1 @@
-export const APP_VERSION = '0.8.0 (Phase 8)';
+export const APP_VERSION = '0.9.0 (Yumeko entfernt)';

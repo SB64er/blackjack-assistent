@@ -11,17 +11,14 @@ import { DEFAULT_RULES, normalizeRules } from '../js/strategy/standard.js';
 import { MemoryDatabase, STORES, DB_VERSION } from '../js/core/idb.js';
 import { BankrollStore, bankrollStats, computedPayout, raisesLimits, validateEntry, defaultConfig } from '../js/risk/bankroll.js';
 import { assessRisk, stakeCheck, outlook } from '../js/risk/risk.js';
-import { strategyAdvice, activeStrategyEV } from '../js/yumeko/decision.js';
-import { answer, intentOf } from '../js/yumeko/chat.js';
+import { strategyAdvice, activeStrategyEV } from '../js/strategy/decision.js';
 import { ArchiveStore } from '../js/archive/archive-store.js';
 import { validateRound, recomputeRound, summarizeRounds, RECORD_SCHEMA } from '../js/archive/round-record.js';
-import { KnowledgeStore, compareVersions, stageOf, situationFromKey, STATUS } from '../js/yumeko/knowledge.js';
-import { SimulationStore } from '../js/yumeko/sim-store.js';
-import { SceneDetector, inferActions, videoFeatures, supportedVideoFormats, textDetectorAvailable } from '../js/yumeko/video-learner.js';
+import { SimulationStore } from '../js/strategy/sim-store.js';
 import { CardTracker } from '../js/game/card-tracker.js';
 import { whiteMask } from '../js/recognition/vision.js';
 import { migrateCalibrationV1, REGION_DEFS } from '../js/calibration/calibration-store.js';
-import { ProfileStore, STANDARD_ID, YUMEKO_ID } from '../js/strategy/profiles.js';
+import { ProfileStore, STANDARD_ID } from '../js/strategy/profiles.js';
 import { Emitter } from '../js/core/events.js';
 
 const R = DEFAULT_RULES;
@@ -280,70 +277,6 @@ test('Entscheidungssystem: Strategie- und Risikointelligenz getrennt prüfbar', 
   assert.equal(dev.deviatesFromModel, true);
 });
 
-// --- 11. Datenbasierte Chatantworten ----------------------------------------------
-test('YUMEKO-Chat: Antworten nur aus echten Daten, ehrlich bei fehlenden Daten', () => {
-  const empty = { now: new Date('2026-11-22T12:00:00Z'), rules: R, rounds: [], knowledge: { items: [], videos: [], versions: [], meta: {} }, profile: { name: 'Standardstrategie', type: 'standard' }, bankroll: { config: defaultConfig(), stats: bankrollStats(defaultConfig(), []) }, strategy: activeStrategyEV({ rules: R }), simulations: [], lastAdvice: null };
-  assert.equal(intentOf('Was hast du heute gelernt?'), 'learned');
-  assert.equal(intentOf('Sollte ich unter diesen Bedingungen überhaupt spielen?'), 'play');
-  assert.equal(intentOf('Wie hoch waren meine tatsächlichen Verluste?'), 'losses');
-  assert.equal(intentOf('Welche Fehler kommen in meinem Archiv häufig vor?'), 'mistakes');
-  assert.equal(intentOf('Warum empfiehlst du diese Aktion?'), 'why');
-  assert.match(answer('Was hast du heute gelernt?', empty).paragraphs.join(' '), /noch nichts gelernt/);
-  assert.match(answer('Was hast du aus meinem letzten Video erkannt?', empty).paragraphs.join(' '), /noch keine/);
-  assert.match(answer('Wie hoch waren meine tatsächlichen Verluste?', empty).paragraphs.join(' '), /nicht aktiviert/);
-  assert.match(answer('Welche Fehler kommen in meinem Archiv häufig vor?', empty).paragraphs.join(' '), /keine Runden/);
-  const play = answer('Sollte ich unter diesen Bedingungen überhaupt spielen?', empty).paragraphs.join(' ');
-  assert.match(play, /rate ich davon ab/);
-  assert.ok(!/garantiert(e|en)? Gewinn(?! )/.test(play.replace('keinen Gewinn', '')));
-  // Mit Echtgelddaten
-  const cfg = { ...defaultConfig(), enabled: true, budget: 100, startBalance: 100, limits: { maxBet: 10, sessionLoss: 50, dailyLoss: null } };
-  const entries = [{ id: 'e1', at: '2026-11-22T10:00:00Z', type: 'round', stake: 10, extra: 0, payout: 0, net: -10 }, { id: 'e2', at: '2026-11-22T10:05:00Z', type: 'round', stake: 10, extra: 0, payout: 20, net: 10 }, { id: 'e3', at: '2026-11-22T10:10:00Z', type: 'round', stake: 10, extra: 0, payout: 0, net: -10 }];
-  const withMoney = { ...empty, bankroll: { config: cfg, stats: bankrollStats(cfg, entries, new Date('2026-11-22T12:00:00Z')) } };
-  const loss = answer('Wie hoch waren meine Verluste?', withMoney).paragraphs.join(' ');
-  assert.match(loss, /verloren 20\.00 CHF/);
-  assert.match(loss, /netto -10\.00 CHF/);
-  const why = answer('Warum empfiehlst du diese Aktion?', { ...empty, lastAdvice: strategyAdvice({ cards: [card('10'), card('6')], up: card('10'), rules: R }) });
-  assert.match(why.paragraphs.join(' '), /Ziehen/);
-  assert.match(answer('Wie wird das Wetter?', empty).paragraphs.join(' '), /ohne Sprachmodell nicht beantworten/);
-});
-
-// --- 2./5. Lerninformationen und Wissensspeicher ------------------------------------
-test('Wissensspeicher: Spielsituation, Lernstufen, Lernverlauf, Versionen vergleichen, Export/Import', async () => {
-  const storage = memoryStorage();
-  const k = new KnowledgeStore({ db: new MemoryDatabase({ persist: storage }) });
-  await k.ready();
-  const it = await k.upsert({ id: 'u:1', category: 'rule', content: '16 gegen 10 stehen', origin: { type: 'user' }, rules: R, status: STATUS.userConfirmed, data: { cell: { key: 'hard:16:10', code: 'S' } } });
-  assert.equal(it.situation, 'Hart 16 gegen 10');
-  assert.equal(situationFromKey('pair:11:6'), 'Paar A,A gegen 6');
-  assert.equal(situationFromKey('soft:18:11'), 'Weich 18 (A,7) gegen Ass');
-  assert.equal(stageOf(it), 'hypothesis');
-  assert.equal(stageOf({ category: 'verified', status: STATUS.verified }), 'verified');
-  assert.equal(stageOf({ category: 'version', status: STATUS.userConfirmed }), 'released');
-  assert.equal(stageOf({ category: 'video', status: STATUS.userConfirmed }), 'observed');
-  await k.correct('u:1', { content: '16 gegen 10: stehen (korrigiert)' });
-  await k.remove('u:1');
-  assert.ok(k.history.some((h) => h.type === 'korrektur'));
-  assert.ok(k.history.some((h) => h.type === 'löschung'));
-  // Verlauf bleibt nach Neustart
-  const k2 = new KnowledgeStore({ db: new MemoryDatabase({ persist: storage }) });
-  await k2.ready();
-  assert.equal(k2.history.length, k.history.length);
-  // Versionen vergleichen
-  const a = { rules: R, overrides: {}, verification: { evVersion: -0.0057 } };
-  const b = { rules: R, overrides: { 'hard:16:10': 'S' }, verification: { evVersion: -0.0058 } };
-  const c = compareVersions(a, b);
-  assert.equal(c.rows.length, 1);
-  assert.equal(c.rows[0].situation, 'Hart 16 gegen 10');
-  assert.ok(c.diff < 0);
-  // Export/Import (eigenes Format, kompatibel)
-  const exp = JSON.parse(JSON.stringify(k2.exportData()));
-  assert.equal(exp.format, 'bjai-yumeko-knowledge');
-  const k3 = new KnowledgeStore({ db: new MemoryDatabase() });
-  await k3.ready();
-  await k3.importData(exp);
-  assert.ok(k3.history.length >= exp.history.length);
-});
-
 test('Simulationen werden getrennt von echten Runden gespeichert', async () => {
   const db = new MemoryDatabase();
   const sims = new SimulationStore({ db });
@@ -356,36 +289,6 @@ test('Simulationen werden getrennt von echten Runden gespeichert', async () => {
   await archive.ready();
   assert.equal(archive.rounds.length, 0, 'keine Simulation im Spielarchiv');
   assert.equal((await db.all('rounds')).length, 0);
-});
-
-// --- 1. Videoimport und Videoverarbeitung ------------------------------------------------
-test('Video: Aktionen aus Kartenänderungen vorschlagen, Formate, OCR ehrlich gekennzeichnet', () => {
-  const d = (rank, x, y) => ({ rank, score: 0.95, box: { x, y, w: 0.02, h: 0.04 } });
-  const det = new SceneDetector();
-  let t = 0;
-  const push = (cards, n = 2) => { for (let i = 0; i < n; i++) { det.push(cards, t); t += 0.5; } };
-  push([d('10', 0.4, 0.2), d('10', 0.3, 0.7), d('2', 0.35, 0.7)]);              // 12 gegen 10
-  push([d('10', 0.4, 0.2), d('10', 0.3, 0.7), d('2', 0.35, 0.7), d('5', 0.4, 0.7)]); // Ziehen -> 17
-  push([d('10', 0.4, 0.2), d('7', 0.45, 0.2), d('10', 0.3, 0.7), d('2', 0.35, 0.7), d('5', 0.4, 0.7)]); // Dealer deckt auf -> Stehen
-  const scenes = inferActions(det.finish(t));
-  assert.equal(scenes.length, 3);
-  assert.equal(scenes[0].action, 'HIT');
-  assert.equal(scenes[0].actionSuggested, true);
-  assert.equal(scenes[1].action, 'STAND');
-  assert.equal(scenes[2].action, null);
-  // Vom Benutzer gewählte Aktion wird nicht überschrieben
-  const s2 = [{ ...scenes[0], action: 'DOUBLE', actionSuggested: false }, scenes[1]];
-  inferActions(s2);
-  assert.equal(s2[0].action, 'DOUBLE');
-  // Formate laut Browser
-  const fakeVideo = { canPlayType: (t2) => (/mp4|quicktime/.test(t2) ? 'maybe' : '') };
-  assert.ok(supportedVideoFormats(fakeVideo).includes('MOV (iPhone/iPad)'));
-  assert.ok(!supportedVideoFormats(fakeVideo).includes('WebM'));
-  // OCR nur mit lokalem Texterkenner, Sprache nie
-  assert.equal(textDetectorAvailable({}), false);
-  assert.equal(videoFeatures({}).find((f) => f.id === 'ocr').status, 'Noch nicht verfügbar');
-  assert.equal(videoFeatures({ TextDetector: function TD() {} }).find((f) => f.id === 'ocr').status, 'verfügbar');
-  assert.equal(videoFeatures({ TextDetector: function TD() {} }).find((f) => f.id === 'speech').status, 'Noch nicht verfügbar');
 });
 
 // --- 13. Gemeinsames Dealer-Feld / Erkennung --------------------------------------------
@@ -423,14 +326,14 @@ test('Erkennung: schwaches Licht – Kartenweiss wird trotzdem erkannt, normales
 });
 
 // --- 12. Bestehende Strategieprofile, 14. Migration aus 0.6.0 --------------------------------
-test('Strategieprofile aus 0.6.0 bleiben erhalten (Standard + YUMEKO + eigene)', () => {
+test('Strategieprofile aus 0.6.0 bleiben erhalten (Standard + eigene)', () => {
   const storage = memoryStorage();
   const settings = new FakeSettings();
   const a = new ProfileStore({ settings, storage });
   const own = a.duplicate(STANDARD_ID, 'Mein Profil');
   a.activate(own.id);
   const b = new ProfileStore({ settings, storage });
-  assert.deepEqual(b.list().map((p) => p.id).slice(0, 2), [STANDARD_ID, YUMEKO_ID]);
+  assert.equal(b.list()[0].id, STANDARD_ID);
   assert.equal(b.active.name, 'Mein Profil');
 });
 
@@ -462,13 +365,13 @@ test('Migration aus 0.6.0: Datenbank v2 mit neuen Bereichen, Archiv-Einträge Sc
 });
 
 // --- 15. Offline-Funktion und GitHub-Pages-Kompatibilität -----------------------------------
-test('Offline/GitHub Pages: neue Dateien im Offline-Speicher, nur relative Pfade, Version (seit 0.8.0: 0.8.0)', () => {
+test('Offline/GitHub Pages: neue Dateien im Offline-Speicher, nur relative Pfade, Version (seit 0.9.0: 0.9.0)', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  for (const f of ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/yumeko/decision.js', 'js/yumeko/chat.js', 'js/yumeko/sim-store.js', 'js/views/lab-view.js', 'js/views/risk-view.js', 'js/views/chat-view.js']) {
+  for (const f of ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/strategy/decision.js', 'js/strategy/sim-store.js', 'js/views/lab-view.js', 'js/views/risk-view.js']) {
     assert.ok(sw.includes(`'./${f}'`), `${f} im Offline-Speicher`);
   }
-  assert.match(sw, /bj-assistent-v0\.8\.0/);
-  const files = ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/views/lab-view.js', 'js/views/risk-view.js', 'js/views/chat-view.js', 'js/yumeko/chat.js'];
+  assert.match(sw, /bj-assistent-v0\.9\.0/);
+  const files = ['js/risk/bankroll.js', 'js/risk/risk.js', 'js/views/lab-view.js', 'js/views/risk-view.js'];
   for (const f of files) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
     assert.ok(!/from '\//.test(src) && !/fetch\(/.test(src), `${f}: keine absoluten Importe, keine Netzwerkzugriffe`);
@@ -476,7 +379,7 @@ test('Offline/GitHub Pages: neue Dateien im Offline-Speicher, nur relative Pfade
 });
 
 test('Simulierte Gewinnquote gilt nicht als Beweis – keine Gewinnversprechen in Texten', () => {
-  for (const f of ['js/views/lab-view.js', 'js/views/risk-view.js', 'js/yumeko/chat.js', 'js/risk/risk.js']) {
+  for (const f of ['js/views/lab-view.js', 'js/views/risk-view.js', 'js/risk/risk.js']) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
     assert.ok(/Keine Gewinngarantie|keine Gewinngarantie|garantiert keinen Gewinn|keine Gewinnversprechen|Keine Gewinnversprechen|beweist keine profitable/.test(src), `${f} weist auf fehlende Gewinngarantie hin`);
     assert.ok(!/garantierter Gewinn|sicherer Gewinn|risikolos/i.test(src), `${f}: keine Gewinnversprechen`);

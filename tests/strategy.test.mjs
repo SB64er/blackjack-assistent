@@ -185,8 +185,8 @@ test('Profile: mehrere Profile, genau eines aktiv, Wechsel', () => {
   const a = s.create({ name: 'Casino A' });
   const b = s.create({ name: 'Casino B' });
   s.create({ name: 'Casino A' }); // gleicher Name -> eindeutig gemacht
-  assert.equal(s.list().length, 5, 'Standard + YUMEKO + 3 eigene');
-  assert.equal(new Set(s.list().map((p) => p.name)).size, 5);
+  assert.equal(s.list().length, 4, 'Standard + 3 eigene');
+  assert.equal(new Set(s.list().map((p) => p.name)).size, 4);
   assert.equal(s.activeId, STANDARD_ID);
   s.activate(a.id);
   assert.equal(s.active.id, a.id);
@@ -236,7 +236,7 @@ test('Profile: kein unkontrolliertes Überschreiben (zweites Fenster)', () => {
   // Nach dem Neuladen enthält Fenster 2 das Profil von Fenster 1 und kann speichern.
   assert.ok(s2.list().some((p) => p.name === 'Von Fenster 1'));
   s2.create({ name: 'Von Fenster 2' });
-  assert.equal(store(storage).list().length, 4);
+  assert.equal(store(storage).list().length, 3);
 });
 
 // --- 6./12. Migration und Rückwärtskompatibilität ---------------------------

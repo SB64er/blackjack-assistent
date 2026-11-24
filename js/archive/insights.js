@@ -1,7 +1,7 @@
 // Intelligentes Spielarchiv (Phase 8.4): Strategieabweichungen je Runde, Lernfortschritt
 // über die Zeit, wiederkehrende Fehler und Gewinn-/Verluststatistik.
 // Alles nur aus gespeicherten Runden berechnet. Reine Logik -> testbar.
-import { decisionEVs, MISTAKE_EV, MIN_SCORE } from '../yumeko/archive-analysis.js';
+import { decisionEVs, MISTAKE_EV, MIN_SCORE } from '../strategy/decision-ev.js';
 import { summarizeRounds, ACTION_TEXT } from './round-record.js';
 import { decksText } from '../strategy/standard.js';
 

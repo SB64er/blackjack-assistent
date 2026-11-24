@@ -1,13 +1,13 @@
-// YUMEKO – Strategieintelligenz.
+// Strategieintelligenz (bis 0.8.0 unter js/yumeko/decision.js).
 // Ermittelt die Spielaktion aus Spielerkarten, Dealerkarte, Tischregeln, erlaubten
 // Aktionen und aktiver Strategieversion – und begründet sie mit exakten
 // Erwartungswerten des Rechenmodells. Sie weiss NICHTS über Geld oder Budget;
 // das prüft die Risikointelligenz (js/risk/risk.js) getrennt.
 // Reine Logik (ohne DOM) -> testbar.
-import { decide, ACTION_LABEL } from '../strategy/engine.js';
-import { strategyEV, profilePolicy } from '../strategy/ev.js';
-import { normalizeRules, rulesText } from '../strategy/standard.js';
-import { decisionEVs } from './archive-analysis.js';
+import { decide, ACTION_LABEL } from './engine.js';
+import { strategyEV, profilePolicy } from './ev.js';
+import { normalizeRules, rulesText } from './standard.js';
+import { decisionEVs } from './decision-ev.js';
 
 const pctTxt = (x, d = 2) => `${(x * 100).toFixed(d).replace('-', '−')} %`;
 
