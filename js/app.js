@@ -29,6 +29,10 @@ import { LabView } from './views/lab-view.js';
 import { RiskView } from './views/risk-view.js';
 import { LegacyAiMemory } from './core/legacy-ai.js';
 import { LernzentrumView } from './views/lernzentrum-view.js';
+import { KartenView } from './views/lz-karten-view.js';
+import { TableView } from './views/lz-table-view.js';
+import { StudyView } from './views/lz-study-view.js';
+import { BrainView } from './views/lz-brain-view.js';
 
 const camera = new CameraService({
   fps: settings.get('camera.fps'),
@@ -91,7 +95,12 @@ const ROUTES = {
   runde: RoundView,
   labor: LabView,
   risiko: RiskView,
-  lernzentrum: LernzentrumView
+  lernzentrum: LernzentrumView,
+  // 0.11.0: Unterseiten des Lernzentrums
+  'lz-karten': KartenView,
+  'lz-table': TableView,
+  'lz-study': StudyView,
+  'lz-brain': BrainView
 };
 
 const root = document.getElementById('app');

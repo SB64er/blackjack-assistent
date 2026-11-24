@@ -234,8 +234,8 @@ test('Kamera, Kartenerkennung, Kalibrierung, Anlernen und Blackjack-Logik sind u
   }
 });
 
-test('Version überall gleich (ab 0.10.0)', () => {
-  assert.match(read('sw.js'), /bj-assistent-v0\.10\.0/);
-  assert.match(read('js/core/version.js'), /APP_VERSION = '0\.10\.0/);
-  assert.match(read('package.json'), /"version": "0\.10\.0"/);
+test('Version überall gleich (ab 0.11.0)', () => {
+  assert.match(read('sw.js'), /bj-assistent-v0\.11\.0/);
+  assert.match(read('js/core/version.js'), /APP_VERSION = '0\.11\.0/);
+  assert.match(read('package.json'), /"version": "0\.11\.0"/);
 });

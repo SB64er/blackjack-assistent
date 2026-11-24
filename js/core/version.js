@@ -1,1 +1,1 @@
-export const APP_VERSION = '0.10.0 (Lernzentrum)';
+export const APP_VERSION = '0.11.0 (Lernzentrum-Bereiche)';

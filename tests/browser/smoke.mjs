@@ -69,7 +69,7 @@ try {
     check(`${name}: Kamera-Ansicht ohne Überlauf`, !(await overflow(page)));
     await page.click('[data-nav="haupt"]');
     await page.click('[data-nav="einstellungen"]');
-    check(`${name}: Version 0.10.0 angezeigt`, (await page.textContent('.footnote')).includes('0.10.0'));
+    check(`${name}: Version 0.11.0 angezeigt`, (await page.textContent('.footnote')).includes('0.11.0'));
     check(`${name}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -150,7 +150,7 @@ try {
     check('Service Worker: übernimmt beim ersten Start', controlled);
     const offlineVersion = await page.waitForFunction(() => window.__bj.updates.offlineVersion, null, { timeout: 5000 })
       .then((h) => h.jsonValue()).catch(() => null);
-    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.10.0', String(offlineVersion));
+    check('Service Worker: meldet Offline-Version', offlineVersion === 'bj-assistent-v0.11.0', String(offlineVersion));
     await ctx.setOffline(true);
     await page.reload();
     const ok = await page.waitForSelector('.screen-main', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -567,9 +567,9 @@ try {
       check(`${label}: Kacheln gross genug zum Tippen`, tile >= 150, String(Math.round(tile)));
     }
     await shot(`lz-${slug}.png`);
-    await page.click('.lz-tile[data-id="study"]');
+    await page.click('.lz-profile');
     await page.waitForSelector('.lz-dialog');
-    check(`${label}: Bereich öffnet Fenster mit Platzhalter`, /Study/.test(await page.textContent('.lz-dialog')) && /Platzhalter/.test(await page.textContent('.lz-dialog')));
+    check(`${label}: Profil öffnet Fenster`, /Yumeko Profil/.test(await page.textContent('.lz-dialog')));
     if (name === 'iPad quer') await shot('lz-dialog.png');
     await page.click('.lz-dialog [data-lz="close"]');
     check(`${label}: Fenster schliesst`, !(await page.$('.lz-dialog')));
@@ -585,6 +585,85 @@ try {
     await page.waitForSelector('.screen-lz');
     await page.click('.lz-activate');
     check(`${label}: Ausschalten -> wieder Standardstrategie`, await page.evaluate(() => window.__bj.profiles.activeId) === 'standard');
+    check(`${label}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // 16) 0.11.0: Unterseiten Karten, AI Table, Study, Brain – Navigation, leere Zustände, Layout
+  for (const [name, size] of Object.entries(SIZES)) {
+    const label = `Lernbereiche ${name}`;
+    const slug = name.split(' ').join('-');
+    const shot = (file) => (process.env.LZ_SHOTS ? page.screenshot({ path: `${process.env.LZ_SHOTS}/${file}`, fullPage: true }) : null);
+    const { ctx, page, errors } = await newPage(size);
+    await page.goto(BASE);
+    await page.waitForSelector('.screen-main');
+    const roundsBefore = await page.evaluate(() => window.__bj.archive.rounds.length);
+    const landscape = size[0] >= 1024 && size[1] > 700;
+    const fits = () => page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1);
+    // Kästen dürfen nichts abschneiden (Inhalt höher als Kasten)
+    const clipped = () => page.evaluate(() => [...document.querySelectorAll('.lzs-panel, .lzs-box, .lzs-net')]
+      .filter((e) => e.scrollHeight > e.clientHeight + 2 && getComputedStyle(e).overflowY !== 'auto').map((e) => e.getAttribute('aria-label') || e.className));
+    for (const [id, title] of [['karten', 'Karten'], ['table', 'AI Table'], ['study', 'Study'], ['brain', 'Brain']]) {
+      if (!(await page.$('.lz-tiles'))) await page.click('[data-nav="lernzentrum"]');
+      await page.waitForSelector('.lz-tiles');
+      await page.click(`.lz-tile[data-id="${id}"]`);
+      await page.waitForSelector(`.lzs-${id}`);
+      check(`${label}: ${title} öffnet`, (await page.textContent('.lzs .lz-title')) === title);
+      check(`${label}: ${title} ohne seitlichen Überlauf`, !(await overflow(page)));
+      if (landscape) {
+        check(`${label}: ${title} passt ohne Scrollen`, await fits());
+        const c = await clipped();
+        check(`${label}: ${title} nichts abgeschnitten`, c.length === 0, c.join(', '));
+      }
+      await shot(`${id}-${slug}.png`);
+      if (id === 'karten') {
+        check(`${label}: Karten-Lernstand 0 %`, /0 %/.test(await page.textContent('.lzs-progress')) && (await page.$$eval('.lzs-tab-pct', (els) => els.every((e) => e.textContent === '0%'))));
+        check(`${label}: Lernen starten deaktiviert`, await page.$eval('.lzs-progress .lzs-btn', (b) => b.disabled));
+        for (const tab of ['player', 'dealer', 'matrix', 'types', 'decks']) {
+          await page.click(`.lzs-tab[data-id="${tab}"]`);
+          check(`${label}: Karten › ${tab} ohne Überlauf`, !(await overflow(page)));
+          if (landscape) {
+            check(`${label}: Karten › ${tab} passt`, await fits());
+            const c = await clipped();
+            check(`${label}: Karten › ${tab} nichts abgeschnitten`, c.length === 0, c.join(', '));
+          }
+          if (name === 'iPad quer' || name === 'iPhone') await shot(`karten-${tab}-${slug}.png`);
+        }
+        await page.click('.lzs-tab[data-id="dealer"]');
+        check(`${label}: Dealer-Wahrscheinlichkeiten leer (—)`, await page.$$eval('.lzs-opct', (els) => els.length === 6 && els.every((e) => e.textContent === '—')));
+        await page.click('.lzs-tab[data-id="decks"]');
+        await page.click('.lzs-seg-btn[data-id="8"]');
+        check(`${label}: Deckzahl wirkt auf Seite`, /416/.test(await page.textContent('.lzs-deckstats')));
+        check(`${label}: Tischregeln unverändert`, await page.evaluate(() => window.__bj.settings.get('rules').decks) === 6);
+        await page.click('.lzs-seg-btn[data-id="6"]');
+        await page.click('.lzs-tab[data-id="cards"]');
+      }
+      if (id === 'table') {
+        check(`${label}: AI-Table-Statistik 0`, (await page.$$eval('.lzs-stat6 .lzs-num', (els) => els.slice(0, 5).map((e) => e.textContent))).join() === '0,0,0,0,0');
+        check(`${label}: Spielzüge und Steuerung deaktiviert`, await page.$$eval('.lzs-act, .lzs-ctrl, .lzs-setting, .lzs-brain-toggle, .lzs-seg-btn', (els) => els.length === 16 && els.every((b) => b.disabled)));
+        check(`${label}: keine Spielkarten auf dem Tisch`, (await page.$$('.lzs-tcard:not(.lzs-tcard--empty)')).length === 0);
+      }
+      if (id === 'study') {
+        check(`${label}: Study-Zähler 0`, (await page.$$eval('.lzs-statbar-val', (els) => els.map((e) => e.textContent))).join() === '0,0,0,0');
+        check(`${label}: Hinzufügen und Automatisch lernen deaktiviert`, await page.evaluate(() => [...document.querySelectorAll('.lzs-switch, .lzs-panel .lzs-btn')].every((b) => b.disabled)));
+        await page.click('.lzs-addtype[data-id="txt"]');
+        check(`${label}: Text-Eingabe sichtbar`, !!(await page.$('textarea.lzs-input')));
+        await page.click('.lzs-seg-btn[data-id="done"]');
+        check(`${label}: Bibliothek leer`, /Noch kein Lernmaterial/.test(await page.textContent('[aria-label="Learning Library"]')));
+        await page.click('.lzs-addtype[data-id="yt"]');
+        await page.click('.lzs-seg-btn[data-id="all"]');
+      }
+      if (id === 'brain') {
+        check(`${label}: Brain-Zähler 0`, (await page.$$eval('.lzs-statbar-val', (els) => els.map((e) => e.textContent))).join() === '0,0,0,0');
+        check(`${label}: leeres Gedächtnis`, /Leeres Gedächtnis/.test(await page.textContent('.lzs-detail')) && /Gedächtnis leer/.test(await page.textContent('.lzs-net')));
+        await page.click('.lzs-area[data-id="rules"]');
+        check(`${label}: Bereich wechselt`, /RULES/.test(await page.textContent('[aria-label="Wissenseinträge"]')));
+        await page.click('.lzs-area[data-id="knowledge"]');
+      }
+      await page.click('.lzs [data-nav="lernzentrum"]');
+      await page.waitForSelector('.lz-tiles');
+    }
+    check(`${label}: Archiv unverändert`, await page.evaluate(() => window.__bj.archive.rounds.length) === roundsBefore);
     check(`${label}: keine JavaScript-Fehler`, errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
